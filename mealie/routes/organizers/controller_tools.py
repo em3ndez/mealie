@@ -3,13 +3,13 @@ from functools import cached_property
 from fastapi import APIRouter, Depends
 from pydantic import UUID4
 
-from mealie.routes._base.abc_controller import BaseUserController
+from mealie.routes._base.base_controllers import BaseUserController
 from mealie.routes._base.controller import controller
-from mealie.routes._base.mixins import CrudMixins
+from mealie.routes._base.mixins import HttpRepo
 from mealie.schema import mapper
-from mealie.schema.query import GetAll
-from mealie.schema.recipe.recipe import RecipeTool
+from mealie.schema.recipe.recipe import RecipeTool, RecipeToolPagination
 from mealie.schema.recipe.recipe_tool import RecipeToolCreate, RecipeToolResponse, RecipeToolSave
+from mealie.schema.response.pagination import PaginationQuery
 
 router = APIRouter(prefix="/tools", tags=["Organizer: Tools"])
 
@@ -18,15 +18,22 @@ router = APIRouter(prefix="/tools", tags=["Organizer: Tools"])
 class RecipeToolController(BaseUserController):
     @cached_property
     def repo(self):
-        return self.repos.tools.by_group(self.group_id)
+        return self.repos.tools
 
     @property
-    def mixins(self) -> CrudMixins:
-        return CrudMixins[RecipeToolCreate, RecipeTool, RecipeToolCreate](self.repo, self.deps.logger)
+    def mixins(self) -> HttpRepo:
+        return HttpRepo[RecipeToolCreate, RecipeTool, RecipeToolCreate](self.repo, self.logger)
 
-    @router.get("", response_model=list[RecipeTool])
-    def get_all(self, q: GetAll = Depends(GetAll)):
-        return self.repo.get_all(start=q.start, limit=q.limit, override_schema=RecipeTool)
+    @router.get("", response_model=RecipeToolPagination)
+    def get_all(self, q: PaginationQuery = Depends(PaginationQuery), search: str | None = None):
+        response = self.repo.page_all(
+            pagination=q,
+            override=RecipeTool,
+            search=search,
+        )
+
+        response.set_pagination_guides(router.url_path_for("get_all"), q.model_dump())
+        return response
 
     @router.post("", response_model=RecipeTool, status_code=201)
     def create_one(self, data: RecipeToolCreate):
@@ -39,6 +46,7 @@ class RecipeToolController(BaseUserController):
 
     @router.put("/{item_id}", response_model=RecipeTool)
     def update_one(self, item_id: UUID4, data: RecipeToolCreate):
+        data = mapper.cast(data, RecipeToolSave, group_id=self.group_id)
         return self.mixins.update_one(data, item_id)
 
     @router.delete("/{item_id}", response_model=RecipeTool)

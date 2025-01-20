@@ -5,46 +5,50 @@ from pydantic import UUID4
 
 from mealie.schema.group.group import GroupAdminUpdate
 from mealie.schema.mapper import mapper
-from mealie.schema.query import GetAll
+from mealie.schema.response.pagination import PaginationQuery
 from mealie.schema.response.responses import ErrorResponse
-from mealie.schema.user.user import GroupBase, GroupInDB
+from mealie.schema.user.user import GroupBase, GroupInDB, GroupPagination
+from mealie.services.group_services.group_service import GroupService
 
 from .._base import BaseAdminController, controller
-from .._base.dependencies import SharedDependencies
-from .._base.mixins import CrudMixins
+from .._base.mixins import HttpRepo
 
-router = APIRouter(prefix="/groups", tags=["Admin: Groups"])
+router = APIRouter(prefix="/groups")
 
 
 @controller(router)
-class AdminUserManagementRoutes(BaseAdminController):
-    deps: SharedDependencies = Depends(SharedDependencies.user)
-
+class AdminGroupManagementRoutes(BaseAdminController):
     @cached_property
     def repo(self):
-        if not self.deps.acting_user:
+        if not self.user:
             raise Exception("No user is logged in.")
 
-        return self.deps.repos.groups
+        return self.repos.groups
 
     # =======================================================================
     # CRUD Operations
 
     @property
     def mixins(self):
-        return CrudMixins[GroupBase, GroupInDB, GroupAdminUpdate](
+        return HttpRepo[GroupBase, GroupInDB, GroupAdminUpdate](
             self.repo,
-            self.deps.logger,
+            self.logger,
             self.registered_exceptions,
         )
 
-    @router.get("", response_model=list[GroupInDB])
-    def get_all(self, q: GetAll = Depends(GetAll)):
-        return self.repo.get_all(start=q.start, limit=q.limit, override_schema=GroupInDB)
+    @router.get("", response_model=GroupPagination)
+    def get_all(self, q: PaginationQuery = Depends(PaginationQuery)):
+        response = self.repo.page_all(
+            pagination=q,
+            override=GroupInDB,
+        )
+
+        response.set_pagination_guides(router.url_path_for("get_all"), q.model_dump())
+        return response
 
     @router.post("", response_model=GroupInDB, status_code=status.HTTP_201_CREATED)
     def create_one(self, data: GroupBase):
-        return self.mixins.create_one(data)
+        return GroupService.create_group(self.repos, data)
 
     @router.get("/{item_id}", response_model=GroupInDB)
     def get_one(self, item_id: UUID4):
@@ -60,6 +64,7 @@ class AdminUserManagementRoutes(BaseAdminController):
             group.preferences = self.repos.group_preferences.update(item_id, preferences)
 
         if data.name not in ["", group.name]:
+            # only update the group if the name changed, since the name is the only field that can be updated
             group.name = data.name
             group = self.repo.update(item_id, group)
 
@@ -69,7 +74,7 @@ class AdminUserManagementRoutes(BaseAdminController):
     def delete_one(self, item_id: UUID4):
         item = self.repo.get_one(item_id)
 
-        if len(item.users) > 0:
+        if item and len(item.users) > 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=ErrorResponse.respond(message="Cannot delete group with users"),

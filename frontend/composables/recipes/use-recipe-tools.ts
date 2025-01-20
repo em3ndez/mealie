@@ -2,14 +2,13 @@ import { reactive, ref, useAsync } from "@nuxtjs/composition-api";
 import { useAsyncKey } from "../use-utils";
 import { useUserApi } from "~/composables/api";
 import { VForm } from "~/types/vuetify";
-import { RecipeTool } from "~/types/api-types/user";
+import { RecipeTool } from "~/lib/api/types/recipe";
 
 export const useTools = function (eager = true) {
   const workingToolData = reactive<RecipeTool>({
     id: "",
     name: "",
     slug: "",
-    onHand: false,
   });
 
   const api = useUserApi();
@@ -21,7 +20,12 @@ export const useTools = function (eager = true) {
       loading.value = true;
       const units = useAsync(async () => {
         const { data } = await api.tools.getAll();
-        return data;
+
+        if (data) {
+          return data.items;
+        } else {
+          return null;
+        }
       }, useAsyncKey());
 
       loading.value = false;
@@ -33,7 +37,7 @@ export const useTools = function (eager = true) {
       const { data } = await api.tools.getAll();
 
       if (data) {
-        tools.value = data;
+        tools.value = data.items;
       }
 
       loading.value = false;

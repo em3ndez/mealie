@@ -2,8 +2,7 @@ import pytest
 import sqlalchemy
 from pydantic import UUID4
 
-from mealie.repos.repository_factory import AllRepositories
-from mealie.schema.group.group_shopping_list import ShoppingListItemCreate, ShoppingListOut, ShoppingListSave
+from mealie.schema.household.group_shopping_list import ShoppingListItemCreate, ShoppingListOut, ShoppingListSave
 from tests.utils.factories import random_string
 from tests.utils.fixture_schemas import TestUser
 
@@ -17,22 +16,24 @@ def create_item(list_id: UUID4) -> dict:
         "note": random_string(10),
         "quantity": 1,
         "unit_id": None,
-        "unit": None,
         "food_id": None,
-        "food": None,
         "recipe_id": None,
         "label_id": None,
     }
 
 
 @pytest.fixture(scope="function")
-def shopping_lists(database: AllRepositories, unique_user: TestUser):
-
+def shopping_lists(unique_user: TestUser):
+    database = unique_user.repos
     models: list[ShoppingListOut] = []
 
     for _ in range(3):
         model = database.group_shopping_lists.create(
-            ShoppingListSave(name=random_string(10), group_id=unique_user.group_id),
+            ShoppingListSave(
+                name=random_string(10),
+                group_id=unique_user.group_id,
+                user_id=unique_user.user_id,
+            ),
         )
 
         models.append(model)
@@ -47,10 +48,14 @@ def shopping_lists(database: AllRepositories, unique_user: TestUser):
 
 
 @pytest.fixture(scope="function")
-def shopping_list(database: AllRepositories, unique_user: TestUser):
-
+def shopping_list(unique_user: TestUser):
+    database = unique_user.repos
     model = database.group_shopping_lists.create(
-        ShoppingListSave(name=random_string(10), group_id=unique_user.group_id),
+        ShoppingListSave(
+            name=random_string(10),
+            group_id=unique_user.group_id,
+            user_id=unique_user.user_id,
+        ),
     )
 
     yield model
@@ -62,9 +67,14 @@ def shopping_list(database: AllRepositories, unique_user: TestUser):
 
 
 @pytest.fixture(scope="function")
-def list_with_items(database: AllRepositories, unique_user: TestUser):
+def list_with_items(unique_user: TestUser):
+    database = unique_user.repos
     list_model = database.group_shopping_lists.create(
-        ShoppingListSave(name=random_string(10), group_id=unique_user.group_id),
+        ShoppingListSave(
+            name=random_string(10),
+            group_id=unique_user.group_id,
+            user_id=unique_user.user_id,
+        ),
     )
 
     for _ in range(10):
@@ -75,7 +85,7 @@ def list_with_items(database: AllRepositories, unique_user: TestUser):
         )
 
     # refresh model
-    list_model = database.group_shopping_lists.get(list_model.id)
+    list_model = database.group_shopping_lists.get_one(list_model.id)  # type: ignore
 
     yield list_model
 

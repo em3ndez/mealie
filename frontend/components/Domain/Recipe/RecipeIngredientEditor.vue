@@ -6,8 +6,9 @@
       dense
       hide-details
       class="mx-1 mt-3 mb-4"
-      placeholder="Section Title"
+      :placeholder="$t('recipe.section-title')"
       style="max-width: 500px"
+      @click="$emit('clickIngredientField', 'title')"
     >
     </v-text-field>
     <v-row :no-gutters="$vuetify.breakpoint.mdAndUp" dense class="d-flex flex-wrap my-1">
@@ -17,38 +18,34 @@
           solo
           hide-details
           dense
-          class="mx-1"
           type="number"
-          placeholder="Quantity"
+          :placeholder="$t('recipe.quantity')"
+          @keypress="quantityFilter"
         >
-          <v-icon
-            v-if="$listeners && $listeners.delete"
-            slot="prepend"
-            class="mr-n1"
-            color="error"
-            @click="$emit('delete')"
-          >
-            {{ $globals.icons.delete }}
+          <v-icon v-if="$listeners && $listeners.delete" slot="prepend" class="mr-n1 handle">
+            {{ $globals.icons.arrowUpDown }}
           </v-icon>
         </v-text-field>
       </v-col>
-      <v-col v-if="!disableAmount && units" sm="12" md="3" cols="12">
+      <v-col v-if="!disableAmount" sm="12" md="3" cols="12">
         <v-autocomplete
+          ref="unitAutocomplete"
           v-model="value.unit"
           :search-input.sync="unitSearch"
+          auto-select-first
           hide-details
           dense
           solo
           return-object
-          :items="units"
+          :items="units || []"
           item-text="name"
           class="mx-1"
-          placeholder="Choose Unit"
+          :placeholder="$t('recipe.choose-unit')"
           clearable
           @keyup.enter="handleUnitEnter"
         >
           <template #no-data>
-            <div class="caption text-center pb-2">Press Enter to Create</div>
+            <div class="caption text-center pb-2">{{ $t("recipe.press-enter-to-create") }}</div>
           </template>
           <template #append-item>
             <div class="px-2">
@@ -59,23 +56,25 @@
       </v-col>
 
       <!-- Foods Input -->
-      <v-col v-if="!disableAmount && foods" m="12" md="3" cols="12" class="">
+      <v-col v-if="!disableAmount" m="12" md="3" cols="12" class="">
         <v-autocomplete
+          ref="foodAutocomplete"
           v-model="value.food"
           :search-input.sync="foodSearch"
+          auto-select-first
           hide-details
           dense
           solo
           return-object
-          :items="foods"
+          :items="foods || []"
           item-text="name"
           class="mx-1 py-0"
-          placeholder="Choose Food"
+          :placeholder="$t('recipe.choose-food')"
           clearable
           @keyup.enter="handleFoodEnter"
         >
           <template #no-data>
-            <div class="caption text-center pb-2">Press Enter to Create</div>
+            <div class="caption text-center pb-2">{{ $t("recipe.press-enter-to-create") }}</div>
           </template>
           <template #append-item>
             <div class="px-2">
@@ -85,35 +84,47 @@
         </v-autocomplete>
       </v-col>
       <v-col sm="12" md="" cols="12">
-        <v-text-field v-model="value.note" hide-details dense solo class="mx-1" placeholder="Notes">
-          <v-icon v-if="disableAmount" slot="prepend" class="mr-n1" color="error" @click="$emit('delete')">
-            {{ $globals.icons.delete }}
-          </v-icon>
-          <template slot="append">
-            <v-tooltip top nudge-right="10">
-              <template #activator="{ on, attrs }">
-                <v-btn icon small class="mt-n1" v-bind="attrs" v-on="on" @click="toggleTitle()">
-                  <v-icon>{{ showTitle || value.title ? $globals.icons.minus : $globals.icons.createAlt }}</v-icon>
-                </v-btn>
-              </template>
-              <span>{{ showTitle ? $t("recipe.remove-section") : $t("recipe.insert-section") }}</span>
-            </v-tooltip>
-          </template>
-          <template slot="append-outer">
-            <v-icon class="handle mt-1">{{ $globals.icons.arrowUpDown }}</v-icon>
-          </template>
-        </v-text-field>
+        <div class="d-flex">
+          <v-text-field
+            v-model="value.note"
+            hide-details
+            dense
+            solo
+            :placeholder="$t('recipe.notes')"
+            @click="$emit('clickIngredientField', 'note')"
+          >
+            <v-icon v-if="disableAmount && $listeners && $listeners.delete" slot="prepend" class="mr-n1 handle">
+              {{ $globals.icons.arrowUpDown }}
+            </v-icon>
+          </v-text-field>
+          <BaseButtonGroup
+            hover
+            :large="false"
+            class="my-auto d-flex"
+            :buttons="btns"
+            @toggle-section="toggleTitle"
+            @toggle-original="toggleOriginalText"
+            @insert-above="$emit('insert-above')"
+            @insert-below="$emit('insert-below')"
+            @insert-ingredient="$emit('insert-ingredient')"
+            @delete="$emit('delete')"
+          />
+        </div>
       </v-col>
     </v-row>
+    <p v-if="showOriginalText" class="text-caption">
+      {{ $t("recipe.original-text-with-value", { originalText: value.originalText }) }}
+    </p>
+
     <v-divider v-if="!$vuetify.breakpoint.mdAndUp" class="my-4"></v-divider>
   </div>
 </template>
 
 <script lang="ts">
-import { defineComponent, reactive, ref, toRefs } from "@nuxtjs/composition-api";
-import { useFoods, useUnits } from "~/composables/recipes";
+import { computed, defineComponent, reactive, ref, toRefs, useContext } from "@nuxtjs/composition-api";
+import { useFoodStore, useFoodData, useUnitStore, useUnitData } from "~/composables/store";
 import { validators } from "~/composables/use-validators";
-import { RecipeIngredient } from "~/types/api-types/recipe";
+import { RecipeIngredient } from "~/lib/api/types/recipe";
 
 export default defineComponent({
   props: {
@@ -125,72 +136,168 @@ export default defineComponent({
       type: Boolean,
       default: false,
     },
+    allowInsertIngredient: {
+      type: Boolean,
+      default: false,
+    }
   },
-  setup(props) {
-    const { value } = props;
+  setup(props, { listeners }) {
+    const { i18n, $globals } = useContext();
+
+    const contextMenuOptions = computed(() => {
+      const options = [
+        {
+          text: i18n.tc("recipe.toggle-section"),
+          event: "toggle-section",
+        },
+        {
+          text: i18n.tc("recipe.insert-above"),
+          event: "insert-above",
+        },
+        {
+          text: i18n.tc("recipe.insert-below"),
+          event: "insert-below",
+        },
+      ];
+
+      if (props.allowInsertIngredient) {
+        options.push({
+          text: i18n.tc("recipe.insert-ingredient") ,
+          event: "insert-ingredient",
+        })
+      }
+
+      // FUTURE: add option to parse a single ingredient
+      // if (!value.food && !value.unit && value.note) {
+      //   options.push({
+      //     text: "Parse Ingredient",
+      //     event: "parse-ingredient",
+      //   });
+      // }
+
+      if (props.value.originalText) {
+        options.push({
+          text: i18n.tc("recipe.see-original-text"),
+          event: "toggle-original",
+        });
+      }
+
+      return options;
+    });
+
+    const btns = computed(() => {
+      const out = [
+        {
+          icon: $globals.icons.dotsVertical,
+          text: i18n.tc("general.menu"),
+          event: "open",
+          children: contextMenuOptions.value,
+        },
+      ];
+
+      if (listeners && listeners.delete) {
+        // @ts-expect-error - TODO: fix this
+        out.unshift({
+          icon: $globals.icons.delete,
+          text: i18n.tc("general.delete"),
+          event: "delete",
+        });
+      }
+
+      return out;
+    });
 
     // ==================================================
     // Foods
-    const { foods, workingFoodData, actions: foodActions } = useFoods();
+    const foodStore = useFoodStore();
+    const foodData = useFoodData();
     const foodSearch = ref("");
+    const foodAutocomplete = ref<HTMLInputElement>();
 
     async function createAssignFood() {
-      workingFoodData.name = foodSearch.value;
-      await foodActions.createOne();
-      value.food = foods.value?.find((food) => food.name === foodSearch.value);
+      foodData.data.name = foodSearch.value;
+      props.value.food = await foodStore.actions.createOne(foodData.data) || undefined;
+      foodData.reset();
+      foodAutocomplete.value?.blur();
     }
 
     // ==================================================
     // Units
-    const { units, workingUnitData, actions: unitActions } = useUnits();
+    const unitStore = useUnitStore();
+    const unitsData = useUnitData();
     const unitSearch = ref("");
+    const unitAutocomplete = ref<HTMLInputElement>();
 
     async function createAssignUnit() {
-      workingUnitData.name = unitSearch.value;
-      await unitActions.createOne();
-      value.unit = units.value?.find((unit) => unit.name === unitSearch.value);
+      unitsData.data.name = unitSearch.value;
+      props.value.unit = await unitStore.actions.createOne(unitsData.data) || undefined;
+      unitsData.reset();
+      unitAutocomplete.value?.blur();
     }
 
     const state = reactive({
       showTitle: false,
+      showOriginalText: false,
     });
 
     function toggleTitle() {
-      if (value.title) {
-        state.showTitle = false;
-        value.title = "";
-      } else {
-        state.showTitle = true;
-        value.title = "Section Title";
+      if (state.showTitle) {
+        props.value.title = "";
       }
+      state.showTitle = !state.showTitle;
+    }
+
+    function toggleOriginalText() {
+      state.showOriginalText = !state.showOriginalText;
     }
 
     function handleUnitEnter() {
-      if (value.unit === undefined || value.unit === null || !value.unit.name.includes(unitSearch.value)) {
+      if (
+        props.value.unit === undefined ||
+        props.value.unit === null ||
+        !props.value.unit.name.includes(unitSearch.value)
+      ) {
         createAssignUnit();
       }
     }
 
     function handleFoodEnter() {
-      if (value.food === undefined || value.food === null || !value.food.name.includes(foodSearch.value)) {
+      if (
+        props.value.food === undefined ||
+        props.value.food === null ||
+        !props.value.food.name.includes(foodSearch.value)
+      ) {
         createAssignFood();
       }
     }
 
+    function quantityFilter(e: KeyboardEvent) {
+      // if digit is pressed, add to quantity
+      if (e.key === "-" || e.key === "+" || e.key === "e") {
+        e.preventDefault();
+      }
+    }
+
     return {
+      ...toRefs(state),
+      quantityFilter,
+      toggleOriginalText,
+      contextMenuOptions,
       handleUnitEnter,
       handleFoodEnter,
-      ...toRefs(state),
+      foodAutocomplete,
       createAssignFood,
+      unitAutocomplete,
       createAssignUnit,
-      foods,
+      foods: foodStore.store,
       foodSearch,
       toggleTitle,
-      unitActions,
-      units,
+      unitActions: unitStore.actions,
+      units: unitStore.store,
       unitSearch,
       validators,
-      workingUnitData,
+      workingUnitData: unitsData.data,
+      btns,
     };
   },
 });

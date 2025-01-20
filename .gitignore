@@ -12,6 +12,7 @@ docs/site/
 frontend/dist/
 
 dev/code-generation/generated/*
+dev/data/mealie.db-journal
 dev/data/backups/*
 dev/data/debug/*
 dev/data/img/*
@@ -55,7 +56,6 @@ develop-eggs/
 downloads/
 eggs/
 .eggs/
-lib/
 lib64/
 parts/
 !frontend/src/components/Recipe/Parts/
@@ -87,6 +87,7 @@ coverage.xml
 *.cover
 .hypothesis/
 .pytest_cache/
+.ruff_cache/
 test.db
 
 # Translations
@@ -158,3 +159,7 @@ dev/code-generation/generated/openapi.json
 dev/code-generation/generated/test_routes.py
 mealie/services/parser_services/crfpp/model.crfmodel
 lcov.info
+dev/code-generation/openapi.json
+
+.run/
+.task/*

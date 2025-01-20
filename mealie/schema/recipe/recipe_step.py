@@ -1,26 +1,23 @@
-from typing import Optional
 from uuid import UUID, uuid4
 
-from fastapi_camelcase import CamelModel
-from pydantic import UUID4, Field
+from pydantic import UUID4, ConfigDict, Field
+
+from mealie.schema._mealie import MealieModel
 
 
-class IngredientReferences(CamelModel):
+class IngredientReferences(MealieModel):
     """
     A list of ingredient references.
     """
 
-    reference_id: Optional[UUID4]
-
-    class Config:
-        orm_mode = True
+    reference_id: UUID4 | None = None
+    model_config = ConfigDict(from_attributes=True)
 
 
-class RecipeStep(CamelModel):
-    id: Optional[UUID] = Field(default_factory=uuid4)
-    title: Optional[str] = ""
+class RecipeStep(MealieModel):
+    id: UUID | None = Field(default_factory=uuid4)
+    title: str | None = ""  # This is the section title!!!
+    summary: str | None = ""
     text: str
     ingredient_references: list[IngredientReferences] = []
-
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)

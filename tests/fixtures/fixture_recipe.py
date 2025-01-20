@@ -1,9 +1,11 @@
+import contextlib
+from collections.abc import Generator
+
 import sqlalchemy
 from pytest import fixture
 
-from mealie.repos.repository_factory import AllRepositories
-from mealie.schema.recipe.recipe import Recipe, RecipeCategory
-from mealie.schema.recipe.recipe_category import CategorySave
+from mealie.schema.recipe.recipe import Recipe
+from mealie.schema.recipe.recipe_category import CategoryOut, CategorySave
 from mealie.schema.recipe.recipe_ingredient import RecipeIngredient
 from mealie.schema.recipe.recipe_step import RecipeStep
 from tests.utils.factories import random_string
@@ -27,7 +29,8 @@ def recipe_store():
 
 
 @fixture(scope="function")
-def recipe_ingredient_only(database: AllRepositories, unique_user: TestUser):
+def recipe_ingredient_only(unique_user: TestUser):
+    database = unique_user.repos
     # Create a recipe
     recipe = Recipe(
         user_id=unique_user.user_id,
@@ -47,15 +50,14 @@ def recipe_ingredient_only(database: AllRepositories, unique_user: TestUser):
 
     yield model
 
-    try:
+    with contextlib.suppress(sqlalchemy.exc.NoResultFound):
         database.recipes.delete(model.slug)
-    except sqlalchemy.exc.NoResultFound:  # Entry Deleted in Test
-        pass
 
 
 @fixture(scope="function")
-def recipe_categories(database: AllRepositories, unique_user: TestUser) -> list[RecipeCategory]:
-    models: list[RecipeCategory] = []
+def recipe_categories(unique_user: TestUser) -> Generator[list[CategoryOut], None, None]:
+    database = unique_user.repos
+    models: list[CategoryOut] = []
     for _ in range(3):
         category = CategorySave(
             group_id=unique_user.group_id,
@@ -66,15 +68,14 @@ def recipe_categories(database: AllRepositories, unique_user: TestUser) -> list[
 
     yield models
 
-    for model in models:
-        try:
-            database.categories.delete(model.id)
-        except sqlalchemy.exc.NoResultFound:
-            pass
+    for m in models:
+        with contextlib.suppress(sqlalchemy.exc.NoResultFound):
+            database.categories.delete(m.id)
 
 
 @fixture(scope="function")
-def random_recipe(database: AllRepositories, unique_user: TestUser) -> Recipe:
+def random_recipe(unique_user: TestUser) -> Generator[Recipe, None, None]:
+    database = unique_user.repos
     recipe = Recipe(
         user_id=unique_user.user_id,
         group_id=unique_user.group_id,
@@ -95,7 +96,5 @@ def random_recipe(database: AllRepositories, unique_user: TestUser) -> Recipe:
 
     yield model
 
-    try:
+    with contextlib.suppress(sqlalchemy.exc.NoResultFound):
         database.recipes.delete(model.slug)
-    except sqlalchemy.exc.NoResultFound:
-        pass

@@ -1,11 +1,12 @@
-import { TranslateResult } from "vue-i18n/types";
-
 export interface SideBarLink {
+  key?: string;
   icon: string;
   to?: string;
   href?: string;
-  title: TranslateResult;
+  title: string;
   children?: SideBarLink[];
+  childrenStartExpanded?: boolean;
+  restricted: boolean;
 }
 
 export type SidebarLinks = Array<SideBarLink>;

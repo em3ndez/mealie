@@ -1,22 +1,21 @@
-from typing import Optional
+from typing import Annotated
 
-from fastapi_camelcase import CamelModel
-from pydantic import validator
+from pydantic import ConfigDict, Field, field_validator
 from slugify import slugify
+
+from mealie.schema._mealie import MealieModel
 
 from ..recipe.recipe_category import RecipeCategoryResponse
 
 
-class CustomPageBase(CamelModel):
+class CustomPageBase(MealieModel):
     name: str
-    slug: Optional[str]
+    slug: Annotated[str | None, Field(validate_default=True)]
     position: int
     categories: list[RecipeCategoryResponse] = []
+    model_config = ConfigDict(from_attributes=True)
 
-    class Config:
-        orm_mode = True
-
-    @validator("slug", always=True, pre=True)
+    @field_validator("slug", mode="before")
     def validate_slug(slug: str, values):
         name: str = values["name"]
         calc_slug: str = slugify(name)
@@ -29,6 +28,4 @@ class CustomPageBase(CamelModel):
 
 class CustomPageOut(CustomPageBase):
     id: int
-
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
