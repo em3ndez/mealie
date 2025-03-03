@@ -1,33 +1,60 @@
-from typing import List
+from pydantic import UUID4, ConfigDict, field_validator
+from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.interfaces import LoaderOption
 
-from fastapi_camelcase import CamelModel
-from pydantic import UUID4
+from mealie.db.models.recipe import RecipeModel, Tool
+from mealie.schema._mealie import MealieModel
 
 
-class RecipeToolCreate(CamelModel):
+class RecipeToolCreate(MealieModel):
     name: str
-    on_hand: bool = False
+    households_with_tool: list[str] = []
 
 
 class RecipeToolSave(RecipeToolCreate):
     group_id: UUID4
 
 
-class RecipeTool(RecipeToolCreate):
+class RecipeToolOut(RecipeToolCreate):
     id: UUID4
     slug: str
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("households_with_tool", mode="before")
+    def convert_households_to_slugs(cls, v):
+        if not v:
+            return []
+
+        try:
+            return [household.slug for household in v]
+        except AttributeError:
+            return v
+
+    def is_on_hand(self, household_slug: str) -> bool:
+        return household_slug in self.households_with_tool
+
+    @classmethod
+    def loader_options(cls) -> list[LoaderOption]:
+        return [
+            selectinload(Tool.households_with_tool),
+        ]
 
 
-class RecipeToolResponse(RecipeTool):
-    recipes: List["Recipe"] = []
+class RecipeToolResponse(RecipeToolOut):
+    recipes: list["RecipeSummary"] = []
+    model_config = ConfigDict(from_attributes=True)
 
-    class Config:
-        orm_mode = True
+    @classmethod
+    def loader_options(cls) -> list[LoaderOption]:
+        return [
+            selectinload(Tool.households_with_tool),
+            selectinload(Tool.recipes).joinedload(RecipeModel.recipe_category),
+            selectinload(Tool.recipes).joinedload(RecipeModel.tags),
+            selectinload(Tool.recipes).joinedload(RecipeModel.tools),
+        ]
 
 
-from .recipe import Recipe
+from .recipe import RecipeSummary  # noqa: E402
 
-RecipeToolResponse.update_forward_refs()
+RecipeToolResponse.model_rebuild()

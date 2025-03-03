@@ -4,10 +4,9 @@
     <slot v-bind="{ state, toggle }"></slot>
   </component>
 </template>
-    
+
 <script lang="ts">
-import { defineComponent, watch } from "@nuxtjs/composition-api";
-import { useToggle } from "@vueuse/shared";
+import { defineComponent, ref, watch } from "@nuxtjs/composition-api";
 
 export default defineComponent({
   props: {
@@ -21,7 +20,11 @@ export default defineComponent({
     },
   },
   setup(_, context) {
-    const [state, toggle] = useToggle();
+    const state = ref(false);
+
+    const toggle = () => {
+      state.value = !state.value;
+    };
 
     watch(state, () => {
       context.emit("input", state);
@@ -34,4 +37,3 @@ export default defineComponent({
   },
 });
 </script>
-    

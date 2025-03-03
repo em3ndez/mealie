@@ -14,11 +14,12 @@
         </v-icon>
         {{ $vuetify.breakpoint.xsOnly ? null : $t("general.random") }}
       </v-btn>
-      <v-menu v-if="$listeners.sort" offset-y left>
+
+      <v-menu v-if="$listeners.sortRecipes" offset-y left>
         <template #activator="{ on, attrs }">
           <v-btn text :icon="$vuetify.breakpoint.xsOnly" v-bind="attrs" :loading="sortLoading" v-on="on">
             <v-icon :left="!$vuetify.breakpoint.xsOnly">
-              {{ $globals.icons.sort }}
+              {{ preferences.sortIcon }}
             </v-icon>
             {{ $vuetify.breakpoint.xsOnly ? null : $t("general.sort") }}
           </v-btn>
@@ -48,68 +49,105 @@
             </v-icon>
             <v-list-item-title>{{ $t("general.updated") }}</v-list-item-title>
           </v-list-item>
-          <v-list-item @click="sortRecipes(EVENTS.shuffle)">
+          <v-list-item @click="sortRecipes(EVENTS.lastMade)">
             <v-icon left>
-              {{ $globals.icons.shuffleVariant }}
+              {{ $globals.icons.chefHat }}
             </v-icon>
-            <v-list-item-title>{{ $t("general.shuffle") }}</v-list-item-title>
+            <v-list-item-title>{{ $t("general.last-made") }}</v-list-item-title>
           </v-list-item>
         </v-list>
       </v-menu>
+      <ContextMenu
+        v-if="!$vuetify.breakpoint.smAndDown"
+        :items="[
+          {
+            title: $tc('general.toggle-view'),
+            icon: $globals.icons.eye,
+            event: 'toggle-dense-view',
+          },
+        ]"
+        @toggle-dense-view="toggleMobileCards()"
+      />
     </v-app-bar>
-    <div v-if="recipes" class="mt-2">
-      <v-row v-if="!viewScale">
-        <v-col v-for="(recipe, index) in recipes" :key="recipe.slug + index" :sm="6" :md="6" :lg="4" :xl="3">
-          <v-lazy>
-            <RecipeCard
-              :name="recipe.name"
-              :description="recipe.description"
-              :slug="recipe.slug"
-              :rating="recipe.rating"
-              :image="recipe.image"
-              :tags="recipe.tags"
-              :recipe-id="recipe.id"
-              @delete="$emit('delete', recipe.slug)"
-            />
-          </v-lazy>
-        </v-col>
-      </v-row>
-      <v-row v-else dense>
-        <v-col
-          v-for="recipe in recipes"
-          :key="recipe.name"
-          cols="12"
-          :sm="singleColumn ? '12' : '12'"
-          :md="singleColumn ? '12' : '6'"
-          :lg="singleColumn ? '12' : '4'"
-          :xl="singleColumn ? '12' : '3'"
-        >
-          <v-lazy>
-            <RecipeCardMobile
-              :name="recipe.name"
-              :description="recipe.description"
-              :slug="recipe.slug"
-              :rating="recipe.rating"
-              :image="recipe.image"
-              :tags="recipe.tags"
-              :recipe-id="recipe.id"
-              @delete="$emit('delete', recipe.slug)"
-            />
-          </v-lazy>
-        </v-col>
-      </v-row>
+    <div v-if="recipes && ready">
+      <div class="mt-2">
+        <v-row v-if="!useMobileCards">
+          <v-col v-for="(recipe, index) in recipes" :key="recipe.slug + index" :sm="6" :md="6" :lg="4" :xl="3">
+            <v-lazy>
+              <RecipeCard
+                :name="recipe.name"
+                :description="recipe.description"
+                :slug="recipe.slug"
+                :rating="recipe.rating"
+                :image="recipe.image"
+                :tags="recipe.tags"
+                :recipe-id="recipe.id"
+
+                 v-on="$listeners"
+              />
+            </v-lazy>
+          </v-col>
+        </v-row>
+        <v-row v-else dense>
+          <v-col
+            v-for="recipe in recipes"
+            :key="recipe.name"
+            cols="12"
+            :sm="singleColumn ? '12' : '12'"
+            :md="singleColumn ? '12' : '6'"
+            :lg="singleColumn ? '12' : '4'"
+            :xl="singleColumn ? '12' : '3'"
+          >
+            <v-lazy>
+              <RecipeCardMobile
+                :name="recipe.name"
+                :description="recipe.description"
+                :slug="recipe.slug"
+                :rating="recipe.rating"
+                :image="recipe.image"
+                :tags="recipe.tags"
+                :recipe-id="recipe.id"
+
+                v-on="$listeners"
+              />
+            </v-lazy>
+          </v-col>
+        </v-row>
+      </div>
+      <v-card v-intersect="infiniteScroll"></v-card>
+      <v-fade-transition>
+        <AppLoader v-if="loading" :loading="loading" />
+      </v-fade-transition>
     </div>
   </div>
 </template>
 
 <script lang="ts">
-import { computed, defineComponent, reactive, toRefs, useContext, useRouter } from "@nuxtjs/composition-api";
+import {
+  computed,
+  defineComponent,
+  onMounted,
+  reactive,
+  ref,
+  toRefs,
+  useAsync,
+  useContext,
+  useRoute,
+  useRouter,
+  watch,
+} from "@nuxtjs/composition-api";
+import { useThrottleFn } from "@vueuse/core";
 import RecipeCard from "./RecipeCard.vue";
 import RecipeCardMobile from "./RecipeCardMobile.vue";
-import { useSorter } from "~/composables/recipes";
-import {Recipe} from "~/types/api-types/recipe";
+import { useLoggedInState } from "~/composables/use-logged-in-state";
+import { useAsyncKey } from "~/composables/use-utils";
+import { useLazyRecipes } from "~/composables/recipes";
+import { Recipe } from "~/lib/api/types/recipe";
+import { useUserSortPreferences } from "~/composables/use-users/preferences";
+import { RecipeSearchQuery } from "~/lib/api/user/recipes/recipe";
 
-const SORT_EVENT = "sort";
+const REPLACE_RECIPES_EVENT = "replaceRecipes";
+const APPEND_RECIPES_EVENT = "appendRecipes";
 
 export default defineComponent({
   components: {
@@ -129,10 +167,6 @@ export default defineComponent({
       type: String,
       default: null,
     },
-    mobileCards: {
-      type: Boolean,
-      default: false,
-    },
     singleColumn: {
       type: Boolean,
       default: false,
@@ -141,21 +175,27 @@ export default defineComponent({
       type: Array as () => Recipe[],
       default: () => [],
     },
+    query: {
+      type: Object as () => RecipeSearchQuery,
+      default: null,
+    },
   },
   setup(props, context) {
-    const utils = useSorter();
+    const preferences = useUserSortPreferences();
 
     const EVENTS = {
       az: "az",
       rating: "rating",
       created: "created",
       updated: "updated",
+      lastMade: "lastMade",
       shuffle: "shuffle",
     };
 
-    const { $globals, $vuetify } = useContext();
-    const viewScale = computed(() => {
-      return props.mobileCards || $vuetify.breakpoint.smAndDown;
+    const { $auth, $globals, $vuetify } = useContext();
+    const { isOwnGroup } = useLoggedInState();
+    const useMobileCards = computed(() => {
+      return $vuetify.breakpoint.smAndDown || preferences.value.useMobileCards;
     });
 
     const displayTitleIcon = computed(() => {
@@ -164,52 +204,213 @@ export default defineComponent({
 
     const state = reactive({
       sortLoading: false,
-    })
+    });
 
+    const route = useRoute();
+    const groupSlug = computed(() => route.value.params.groupSlug || $auth.user?.groupSlug || "");
+
+    const page = ref(1);
+    const perPage = 32;
+    const hasMore = ref(true);
+    const ready = ref(false);
+    const loading = ref(false);
+
+    const { fetchMore, getRandom } = useLazyRecipes(isOwnGroup.value ? null : groupSlug.value);
     const router = useRouter();
-    function navigateRandom() {
-      if (props.recipes.length > 0) {
-        const recipe = props.recipes[Math.floor(Math.random() * props.recipes.length)];
-        if (recipe.slug !== undefined) {
-          router.push(`/recipe/${recipe.slug}`);
-        }
-      }
+
+    const queryFilter = computed(() => {
+      return props.query.queryFilter || null;
+
+      // TODO: allow user to filter out null values when ordering by a value that may be null (such as lastMade)
+
+      // const orderBy = props.query?.orderBy || preferences.value.orderBy;
+      // const orderByFilter = preferences.value.filterNull && orderBy ? `${orderBy} IS NOT NULL` : null;
+
+      // if (props.query.queryFilter && orderByFilter) {
+      //   return `(${props.query.queryFilter}) AND ${orderByFilter}`;
+      // } else if (props.query.queryFilter) {
+      //   return props.query.queryFilter;
+      // } else {
+      //   return orderByFilter;
+      // }
+    });
+
+    async function fetchRecipes(pageCount = 1) {
+      const orderDir = props.query?.orderDirection || preferences.value.orderDirection;
+      const orderByNullPosition = props.query?.orderByNullPosition || orderDir === "asc" ? "first" : "last";
+      return await fetchMore(
+        page.value,
+        perPage * pageCount,
+        props.query?.orderBy || preferences.value.orderBy,
+        orderDir,
+        orderByNullPosition,
+        props.query,
+        // we use a computed queryFilter to filter out recipes that have a null value for the property we're sorting by
+        queryFilter.value,
+      );
     }
 
+    onMounted(async () => {
+      await initRecipes();
+      ready.value = true;
+    });
+
+    let lastQuery: string | undefined = JSON.stringify(props.query);
+    watch(
+      () => props.query,
+      async (newValue: RecipeSearchQuery | undefined) => {
+        const newValueString = JSON.stringify(newValue)
+        if (lastQuery !== newValueString) {
+          lastQuery = newValueString;
+          ready.value = false;
+          await initRecipes();
+          ready.value = true;
+        }
+      }
+    );
+
+    async function initRecipes() {
+      page.value = 1;
+      hasMore.value = true;
+
+      // we double-up the first call to avoid a bug with large screens that render
+      // the entire first page without scrolling, preventing additional loading
+      const newRecipes = await fetchRecipes(page.value + 1);
+      if (newRecipes.length < perPage) {
+        hasMore.value = false;
+      }
+
+      // since we doubled the first call, we also need to advance the page
+      page.value = page.value + 1;
+
+      context.emit(REPLACE_RECIPES_EVENT, newRecipes);
+    }
+
+    const infiniteScroll = useThrottleFn(() => {
+      useAsync(async () => {
+        if (!hasMore.value || loading.value) {
+          return;
+        }
+
+        loading.value = true;
+        page.value = page.value + 1;
+
+        const newRecipes = await fetchRecipes();
+        if (newRecipes.length < perPage) {
+          hasMore.value = false;
+        }
+        if (newRecipes.length) {
+          context.emit(APPEND_RECIPES_EVENT, newRecipes);
+        }
+
+        loading.value = false;
+      }, useAsyncKey());
+    }, 500);
+
+
     function sortRecipes(sortType: string) {
-      state.sortLoading = true;
-      const sortTarget = [...props.recipes];
+      if (state.sortLoading || loading.value) {
+        return;
+      }
+
+      function setter(
+        orderBy: string,
+        ascIcon: string,
+        descIcon: string,
+        defaultOrderDirection = "asc",
+        filterNull = false
+      ) {
+        if (preferences.value.orderBy !== orderBy) {
+          preferences.value.orderBy = orderBy;
+          preferences.value.orderDirection = defaultOrderDirection;
+          preferences.value.filterNull = filterNull;
+        } else {
+          preferences.value.orderDirection = preferences.value.orderDirection === "asc" ? "desc" : "asc";
+        }
+        preferences.value.sortIcon = preferences.value.orderDirection === "asc" ? ascIcon : descIcon;
+      }
+
       switch (sortType) {
         case EVENTS.az:
-          utils.sortAToZ(sortTarget);
+          setter(
+            "name",
+            $globals.icons.sortAlphabeticalAscending,
+            $globals.icons.sortAlphabeticalDescending,
+            "asc",
+            false
+          );
           break;
         case EVENTS.rating:
-          utils.sortByRating(sortTarget);
+          setter("rating", $globals.icons.sortAscending, $globals.icons.sortDescending, "desc", true);
           break;
         case EVENTS.created:
-          utils.sortByCreated(sortTarget);
+          setter(
+            "created_at",
+            $globals.icons.sortCalendarAscending,
+            $globals.icons.sortCalendarDescending,
+            "desc",
+            false
+          );
           break;
         case EVENTS.updated:
-          utils.sortByUpdated(sortTarget);
+          setter("updated_at", $globals.icons.sortClockAscending, $globals.icons.sortClockDescending, "desc", false);
           break;
-        case EVENTS.shuffle:
-          utils.shuffle(sortTarget);
+        case EVENTS.lastMade:
+          setter(
+            "last_made",
+            $globals.icons.sortCalendarAscending,
+            $globals.icons.sortCalendarDescending,
+            "desc",
+            true
+          );
           break;
         default:
           console.log("Unknown Event", sortType);
           return;
       }
-      context.emit(SORT_EVENT, sortTarget);
-      state.sortLoading = false;
+
+      useAsync(async () => {
+        // reset pagination
+        page.value = 1;
+        hasMore.value = true;
+
+        state.sortLoading = true;
+        loading.value = true;
+
+        // fetch new recipes
+        const newRecipes = await fetchRecipes();
+        context.emit(REPLACE_RECIPES_EVENT, newRecipes);
+
+        state.sortLoading = false;
+        loading.value = false;
+      }, useAsyncKey());
+    }
+
+    async function navigateRandom() {
+      const recipe = await getRandom(props.query, queryFilter.value);
+      if (!recipe?.slug) {
+        return;
+      }
+
+      router.push(`/g/${groupSlug.value}/r/${recipe.slug}`);
+    }
+
+    function toggleMobileCards() {
+      preferences.value.useMobileCards = !preferences.value.useMobileCards;
     }
 
     return {
       ...toRefs(state),
-      EVENTS,
-      viewScale,
       displayTitleIcon,
+      EVENTS,
+      infiniteScroll,
+      ready,
+      loading,
       navigateRandom,
+      preferences,
       sortRecipes,
+      toggleMobileCards,
+      useMobileCards,
     };
   },
 });

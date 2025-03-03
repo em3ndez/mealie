@@ -1,20 +1,17 @@
 import string
 import unicodedata
-from typing import Tuple
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
-from .._helpers import check_char, move_parens_to_end
+from ..parser_utils import check_char, move_parens_to_end
 
 
 class BruteParsedIngredient(BaseModel):
     food: str = ""
     note: str = ""
-    amount: float = ""
+    amount: float = 1.0
     unit: str = ""
-
-    class Config:
-        anystr_strip_whitespace = True
+    model_config = ConfigDict(str_strip_whitespace=True)
 
 
 def parse_fraction(x):
@@ -27,11 +24,11 @@ def parse_fraction(x):
             raise ValueError
         try:
             return int(frac_split[0]) / int(frac_split[1])
-        except ZeroDivisionError:
-            raise ValueError
+        except ZeroDivisionError as e:
+            raise ValueError from e
 
 
-def parse_amount(ing_str) -> Tuple[float, str, str]:
+def parse_amount(ing_str) -> tuple[float, str, str]:
     def keep_looping(ing_str, end) -> bool:
         """
         Checks if:
@@ -48,7 +45,9 @@ def parse_amount(ing_str) -> Tuple[float, str, str]:
         if check_char(ing_str[end], ".", ",", "/") and end + 1 < len(ing_str) and ing_str[end + 1] in string.digits:
             return True
 
-    amount = 0
+        return False
+
+    amount = 0.0
     unit = ""
     note = ""
 
@@ -87,7 +86,7 @@ def parse_amount(ing_str) -> Tuple[float, str, str]:
     return amount, unit, note
 
 
-def parse_ingredient_with_comma(tokens) -> Tuple[str, str]:
+def parse_ingredient_with_comma(tokens) -> tuple[str, str]:
     ingredient = ""
     note = ""
     start = 0
@@ -105,7 +104,7 @@ def parse_ingredient_with_comma(tokens) -> Tuple[str, str]:
     return ingredient, note
 
 
-def parse_ingredient(tokens) -> Tuple[str, str]:
+def parse_ingredient(tokens) -> tuple[str, str]:
     ingredient = ""
     note = ""
     if tokens[-1].endswith(")"):
@@ -123,7 +122,7 @@ def parse_ingredient(tokens) -> Tuple[str, str]:
             # no opening bracket anywhere -> just ignore the last bracket
             ingredient, note = parse_ingredient_with_comma(tokens)
         else:
-            # opening bracket found -> split in ingredient and note, remove brackets from note  # noqa: E501
+            # opening bracket found -> split in ingredient and note, remove brackets from note
             note = " ".join(tokens[start:])[1:-1]
             ingredient = " ".join(tokens[:start])
     else:
@@ -131,8 +130,8 @@ def parse_ingredient(tokens) -> Tuple[str, str]:
     return ingredient, note
 
 
-def parse(ing_str) -> BruteParsedIngredient:
-    amount = 0
+def parse(ing_str, parser) -> BruteParsedIngredient:
+    amount = 0.0
     unit = ""
     ingredient = ""
     note = ""
@@ -191,12 +190,20 @@ def parse(ing_str) -> BruteParsedIngredient:
             # which means this is the ingredient
             ingredient = tokens[1]
     except ValueError:
-        try:
-            # can't parse first argument as amount
-            # -> no unit -> parse everything as ingredient
-            ingredient, note = parse_ingredient(tokens)
-        except ValueError:
-            ingredient = " ".join(tokens[1:])
+        # can't parse first argument as amount
+        # try to parse as unit and ingredient (e.g. "a tblsp salt"), with unit in first three tokens
+        # won't work for units that have spaces
+        for index, token in enumerate(tokens[:3]):
+            if parser.data_matcher.find_unit_match(token):
+                unit = token
+                ingredient, note = parse_ingredient(tokens[index + 1 :])
+                break
+        if not unit:
+            try:
+                # no unit -> parse everything as ingredient
+                ingredient, note = parse_ingredient(tokens)
+            except ValueError:
+                ingredient = " ".join(tokens[1:])
 
     if unit_note not in note:
         note += " " + unit_note

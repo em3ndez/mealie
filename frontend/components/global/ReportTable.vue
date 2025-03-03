@@ -25,8 +25,8 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, useRouter } from "@nuxtjs/composition-api";
-import { ReportSummary } from "~/api/class-interfaces/group-reports";
+import { defineComponent, useContext, useRouter } from "@nuxtjs/composition-api";
+import { ReportSummary } from "~/lib/api/types/reports";
 
 export default defineComponent({
   props: {
@@ -37,18 +37,23 @@ export default defineComponent({
   },
 
   setup(_, context) {
+    const { i18n } = useContext();
     const router = useRouter();
 
     const headers = [
-      { text: "Category", value: "category" },
-      { text: "Name", value: "name" },
-      { text: "Timestamp", value: "timestamp" },
-      { text: "Status", value: "status" },
-      { text: "Delete", value: "actions" },
+      { text: i18n.t("category.category"), value: "category" },
+      { text: i18n.t("general.name"), value: "name" },
+      { text: i18n.t("general.timestamp"), value: "timestamp" },
+      { text: i18n.t("general.status"), value: "status" },
+      { text: i18n.t("general.delete"), value: "actions" },
     ];
 
     function handleRowClick(item: ReportSummary) {
-      router.push("/user/group/data/reports/" + item.id);
+      if (item.status === "in-progress") {
+        return;
+      }
+
+      router.push(`/group/reports/${item.id}`);
     }
 
     function capitalize(str: string) {
@@ -69,5 +74,4 @@ export default defineComponent({
 });
 </script>
 
-<style lang="scss" scoped>
-</style>
+<style lang="scss" scoped></style>
