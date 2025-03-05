@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from mealie.schema.recipe.recipe import Recipe
 from mealie.schema.recipe.recipe_step import IngredientReferences
-from tests.utils import jsonify, routes
+from tests.utils import api_routes, jsonify
 from tests.utils.fixture_schemas import TestUser
 
 
@@ -13,10 +13,9 @@ def test_associate_ingredient_with_step(api_client: TestClient, unique_user: Tes
     recipe: Recipe = random_recipe
 
     # Associate an ingredient with a step
-
     steps = {}  # key=step_id, value=ingredient_id
 
-    for idx, step in enumerate(recipe.recipe_instructions):
+    for idx, step in enumerate(recipe.recipe_instructions or []):
         ingredients = random.choices(recipe.recipe_ingredient, k=2)
 
         step.ingredient_references = [
@@ -26,8 +25,8 @@ def test_associate_ingredient_with_step(api_client: TestClient, unique_user: Tes
         steps[idx] = [str(ingredient.reference_id) for ingredient in ingredients]
 
     response = api_client.put(
-        routes.RoutesRecipe.item(recipe.slug),
-        json=jsonify(recipe.dict()),
+        api_routes.recipes_slug(recipe.slug),
+        json=jsonify(recipe.model_dump()),
         headers=unique_user.token,
     )
 
@@ -35,14 +34,13 @@ def test_associate_ingredient_with_step(api_client: TestClient, unique_user: Tes
 
     # Get Recipe and check that the ingredient is associated with the step
 
-    response = api_client.get(routes.RoutesRecipe.item(recipe.slug), headers=unique_user.token)
-
+    response = api_client.get(api_routes.recipes_slug(recipe.slug), headers=unique_user.token)
     assert response.status_code == 200
 
-    recipe = json.loads(response.text)
+    data: dict = json.loads(response.text)
 
-    for idx, step in enumerate(recipe.get("recipeInstructions")):
-        all_refs = [ref["referenceId"] for ref in step.get("ingredientReferences")]
+    for idx, stp in enumerate(data.get("recipeInstructions") or []):
+        all_refs = [ref["referenceId"] for ref in stp.get("ingredientReferences")]
 
         assert len(all_refs) == 2
 

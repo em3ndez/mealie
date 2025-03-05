@@ -1,6 +1,6 @@
 <template>
   <div>
-    <BaseDialog v-model="dialog" title="Share Recipe" :icon="$globals.icons.link">
+    <BaseDialog v-model="dialog" :title="$t('recipe-share.share-recipe')" :icon="$globals.icons.link">
       <v-card-text>
         <v-menu
           v-model="datePickerMenu"
@@ -13,8 +13,8 @@
           <template #activator="{ on, attrs }">
             <v-text-field
               v-model="expirationDate"
-              label="Expiration Date"
-              hint="Default 30 Days"
+              :label="$t('recipe-share.expiration-date')"
+              :hint="$t('recipe-share.default-30-days')"
               persistent-hint
               :prepend-icon="$globals.icons.calendar"
               v-bind="attrs"
@@ -22,7 +22,13 @@
               v-on="on"
             ></v-text-field>
           </template>
-          <v-date-picker v-model="expirationDate" no-title @input="datePickerMenu = false"></v-date-picker>
+          <v-date-picker
+            v-model="expirationDate"
+            no-title
+            :first-day-of-week="firstDayOfWeek"
+            :local="$i18n.locale"
+            @input="datePickerMenu = false"
+          />
         </v-menu>
       </v-card-text>
       <v-card-actions class="justify-end">
@@ -35,7 +41,7 @@
         </v-list-item-avatar>
 
         <v-list-item-content>
-          <v-list-item-title> Expires At </v-list-item-title>
+          <v-list-item-title> {{ $t("recipe-share.expires-at") }} </v-list-item-title>
 
           <v-list-item-subtitle>{{ $d(new Date(token.expiresAt), "long") }}</v-list-item-subtitle>
         </v-list-item-content>
@@ -56,11 +62,11 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, computed, toRefs, reactive, useContext } from "@nuxtjs/composition-api";
-import { whenever } from "@vueuse/shared";
-import { useClipboard, useShare } from "@vueuse/core";
-import { RecipeShareToken } from "~/api/class-interfaces/recipes/recipe-share";
+import { defineComponent, computed, toRefs, reactive, useContext, useRoute } from "@nuxtjs/composition-api";
+import { useClipboard, useShare, whenever } from "@vueuse/core";
+import { RecipeShareToken } from "~/lib/api/types/recipe";
 import { useUserApi } from "~/composables/api";
+import { useHouseholdSelf } from "~/composables/use-households";
 import { alert } from "~/composables/use-toast";
 
 export default defineComponent({
@@ -85,7 +91,6 @@ export default defineComponent({
         return props.value;
       },
       set: (val) => {
-        console.log(val);
         context.emit("input", val);
       },
     });
@@ -107,6 +112,15 @@ export default defineComponent({
       }
     );
 
+    const { $auth, i18n } = useContext();
+    const { household } = useHouseholdSelf();
+    const route = useRoute();
+    const groupSlug = computed(() => route.value.params.groupSlug || $auth.user?.groupSlug || "");
+
+    const firstDayOfWeek = computed(() => {
+      return household.value?.preferences?.firstDayOfWeek || 0;
+    });
+
     // ============================================================
     // Token Actions
 
@@ -118,7 +132,7 @@ export default defineComponent({
 
       const { data } = await userApi.recipes.share.createOne({
         recipeId: props.recipeId,
-        expiresAt: expirationDate,
+        expiresAt: expirationDate.toISOString(),
       });
 
       if (data) {
@@ -132,28 +146,38 @@ export default defineComponent({
     }
 
     async function refreshTokens() {
-      const { data } = await userApi.recipes.share.getAll(0, 999, { recipe_id: props.recipeId });
+      const { data } = await userApi.recipes.share.getAll(1, -1, { recipe_id: props.recipeId });
 
       if (data) {
-        state.tokens = data;
+        // @ts-expect-error - TODO: This routes doesn't have pagination, but the type are mismatched.
+        state.tokens = data ?? [];
       }
     }
 
-    const { i18n } = useContext();
     const { share, isSupported: shareIsSupported } = useShare();
-    const { copy } = useClipboard();
+    const { copy, copied, isSupported } = useClipboard();
 
     function getRecipeText() {
       return i18n.t("recipe.share-recipe-message", [props.name]);
     }
 
     function getTokenLink(token: string) {
-      return `${window.location.origin}/shared/recipes/${token}`;
+      return `${window.location.origin}/g/${groupSlug.value}/shared/r/${token}`;
     }
 
     async function copyTokenLink(token: string) {
-      await copy(getTokenLink(token));
-      alert.success("Recipe link copied to clipboard");
+      if (isSupported.value) {
+        await copy(getTokenLink(token));
+        if (copied.value) {
+          alert.success(i18n.t("recipe-share.recipe-link-copied-message") as string);
+        }
+        else {
+          alert.error(i18n.t("general.clipboard-copy-failure") as string);
+        }
+      }
+      else {
+        alert.error(i18n.t("general.clipboard-not-supported") as string);
+      }
     }
 
     async function shareRecipe(token: string) {
@@ -173,6 +197,7 @@ export default defineComponent({
       dialog,
       createNewToken,
       deleteToken,
+      firstDayOfWeek,
       shareRecipe,
       copyTokenLink,
     };

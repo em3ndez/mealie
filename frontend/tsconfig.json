@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "jsx": "preserve",
     "target": "ES2018",
     "module": "ESNext",
     "moduleResolution": "Node",
@@ -16,11 +17,19 @@
       "~/*": ["./*"],
       "@/*": ["./*"]
     },
-    "types": ["@nuxt/types", "@nuxtjs/axios", "@types/node", "@nuxtjs/i18n", "@nuxtjs/auth-next", "@nuxtjs/vuetify", "@types/sortablejs"]
+    "types": [
+      "@nuxt/types",
+      "@nuxtjs/axios",
+      "@types/node",
+      "@nuxtjs/i18n",
+      "@nuxtjs/auth-next",
+      "@nuxtjs/vuetify",
+      "@types/sortablejs"
+    ]
+  },
+  "vueCompilerOptions": {
+    "target": 2.7
   },
   "include": ["**/*", ".eslintrc.js"],
-  "exclude": ["node_modules", ".nuxt", "dist"],
-  "vueCompilerOptions": {
-    "experimentalCompatMode": 2
-  }
+  "exclude": ["node_modules", ".nuxt", "dist"]
 }

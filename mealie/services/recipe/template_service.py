@@ -16,7 +16,7 @@ class TemplateType(str, enum.Enum):
 
 
 class TemplateService(BaseService):
-    def __init__(self, temp: Path = None) -> None:
+    def __init__(self, temp: Path | None = None) -> None:
         """Creates a template service that can be used for multiple template generations
         A temporary directory must be provided as a place holder for where to render all templates
         Args:
@@ -27,7 +27,7 @@ class TemplateService(BaseService):
         super().__init__()
 
     @property
-    def templates(self) -> list:
+    def templates(self) -> dict[str, list[str]]:
         """
         Returns a list of all templates available to render.
         """
@@ -58,7 +58,7 @@ class TemplateService(BaseService):
 
         return TemplateType(t_type)
 
-    def render(self, recipe: Recipe, template: str = None) -> Path:
+    def render(self, recipe: Recipe, template: str) -> Path:
         """
         Renders a TemplateType in a temporary directory and returns the path to the file.
 
@@ -78,6 +78,8 @@ class TemplateService(BaseService):
         if t_type == TemplateType.zip:
             return self._render_zip(recipe)
 
+        raise ValueError(f"Template Type '{t_type}' not found.")
+
     def _render_json(self, recipe: Recipe) -> Path:
         """
         Renders a JSON file in a temporary directory and returns
@@ -85,31 +87,40 @@ class TemplateService(BaseService):
         """
         self.__check_temp(self._render_json)
 
+        if self.temp is None:
+            raise ValueError("Temporary directory must be provided for method _render_json")
+
         save_path = self.temp.joinpath(f"{recipe.slug}.json")
         with open(save_path, "w") as f:
-            f.write(recipe.json(indent=4, by_alias=True))
+            f.write(recipe.model_dump_json(indent=4, by_alias=True))
 
         return save_path
 
-    def _render_jinja2(self, recipe: Recipe, j2_template: str = None) -> Path:
+    def _render_jinja2(self, recipe: Recipe, j2_template: str | None = None) -> Path:
         """
         Renders a Jinja2 Template in a temporary directory and returns
         the path to the file.
         """
         self.__check_temp(self._render_jinja2)
 
-        j2_template: Path = self.directories.TEMPLATE_DIR / j2_template
+        if j2_template is None:
+            raise ValueError("Template must be provided for method _render_jinja2")
 
-        if not j2_template.is_file():
-            raise FileNotFoundError(f"Template '{j2_template}' not found.")
+        j2_path: Path = self.directories.TEMPLATE_DIR / j2_template
 
-        with open(j2_template, "r") as f:
+        if not j2_path.is_file():
+            raise FileNotFoundError(f"Template '{j2_path}' not found.")
+
+        with open(j2_path) as f:
             template_text = f.read()
 
         template = Template(template_text)
-        rendered_text = template.render(recipe=recipe.dict(by_alias=True))
+        rendered_text = template.render(recipe=recipe.model_dump(by_alias=True))
 
-        save_name = f"{recipe.slug}{j2_template.suffix}"
+        save_name = f"{recipe.slug}{j2_path.suffix}"
+
+        if self.temp is None:
+            raise ValueError("Temporary directory must be provided for method _render_jinja2")
 
         save_path = self.temp.joinpath(save_name)
 
@@ -122,10 +133,14 @@ class TemplateService(BaseService):
         self.__check_temp(self._render_jinja2)
 
         image_asset = recipe.image_dir.joinpath(RecipeImageTypes.original.value)
+
+        if self.temp is None:
+            raise ValueError("Temporary directory must be provided for method _render_zip")
+
         zip_temp = self.temp.joinpath(f"{recipe.slug}.zip")
 
         with ZipFile(zip_temp, "w") as myzip:
-            myzip.writestr(f"{recipe.slug}.json", recipe.json())
+            myzip.writestr(f"{recipe.slug}.json", recipe.model_dump_json())
 
             if image_asset.is_file():
                 myzip.write(image_asset, arcname=image_asset.name)

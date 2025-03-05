@@ -6,7 +6,8 @@
       :top-link="topLinks"
       :bottom-links="bottomLinks"
       :user="{ data: true }"
-      :secondary-header="$t('user.admin')"
+      :secondary-header="$t('sidebar.developer')"
+      :secondary-links="developerLinks"
     />
 
     <TheSnackbar />
@@ -26,14 +27,14 @@
 
 <script lang="ts">
 import { defineComponent, ref, useContext, onMounted } from "@nuxtjs/composition-api";
-import AppHeader from "@/components/Layout/AppHeader.vue";
-import AppSidebar from "@/components/Layout/AppSidebar.vue";
-import TheSnackbar from "~/components/Layout/TheSnackbar.vue";
+import AppHeader from "@/components/Layout/LayoutParts/AppHeader.vue";
+import AppSidebar from "@/components/Layout/LayoutParts/AppSidebar.vue";
+import TheSnackbar from "~/components/Layout/LayoutParts/TheSnackbar.vue";
 import { SidebarLinks } from "~/types/application-types";
 
 export default defineComponent({
   components: { AppHeader, AppSidebar, TheSnackbar },
-  middleware: "auth",
+  middleware: ["auth", "admin-only"],
   auth: true,
   setup() {
     const { $globals, i18n, $vuetify } = useContext();
@@ -44,65 +45,79 @@ export default defineComponent({
     });
 
     const topLinks: SidebarLinks = [
-      // {
-      //   icon: $globals.icons.viewDashboard,
-      //   to: "/admin/dashboard",
-      //   title: i18n.t("sidebar.dashboard"),
-      // },
       {
         icon: $globals.icons.cog,
         to: "/admin/site-settings",
-        title: i18n.t("sidebar.site-settings"),
+        title: i18n.tc("sidebar.site-settings"),
+        restricted: true,
       },
-      {
-        icon: $globals.icons.tools,
-        to: "/admin/toolbox",
-        title: i18n.t("sidebar.toolbox"),
-        children: [
-          {
-            icon: $globals.icons.foods,
-            to: "/admin/toolbox/foods",
-            title: "Manage Foods",
-          },
-          {
-            icon: $globals.icons.units,
-            to: "/admin/toolbox/units",
-            title: "Manage Units",
-          },
-        ],
-      },
+
+      // {
+      //   icon: $globals.icons.chart,
+      //   to: "/admin/analytics",
+      //   title: "Analytics",
+      //   restricted: true,
+      // },
       {
         icon: $globals.icons.user,
         to: "/admin/manage/users",
-        title: i18n.t("user.users"),
+        title: i18n.tc("user.users"),
+        restricted: true,
+      },
+      {
+        icon: $globals.icons.household,
+        to: "/admin/manage/households",
+        title: i18n.tc("household.households"),
+        restricted: true,
       },
       {
         icon: $globals.icons.group,
         to: "/admin/manage/groups",
-        title: i18n.t("group.groups"),
+        title: i18n.tc("group.groups"),
+        restricted: true,
       },
       {
         icon: $globals.icons.database,
         to: "/admin/backups",
-        title: i18n.t("sidebar.backups"),
+        title: i18n.tc("sidebar.backups"),
+        restricted: true,
+      },
+    ];
+
+    const developerLinks: SidebarLinks = [
+      {
+        icon: $globals.icons.wrench,
+        to: "/admin/maintenance",
+        title: i18n.tc("sidebar.maintenance"),
+        restricted: true,
       },
       {
-        icon: $globals.icons.check,
-        to: "/admin/background-tasks",
-        title: "Background Tasks",
-      },
-      {
-        icon: $globals.icons.slotMachine,
-        to: "/admin/parser",
-        title: "Parser",
+        icon: $globals.icons.robot,
+        title: i18n.tc("recipe.debug"),
+        restricted: true,
+        children: [
+          {
+            icon: $globals.icons.robot,
+            to: "/admin/debug/openai",
+            title: i18n.tc("admin.openai"),
+            restricted: true,
+          },
+          {
+            icon: $globals.icons.slotMachine,
+            to: "/admin/debug/parser",
+            title: i18n.tc("sidebar.parser"),
+            restricted: true,
+          },
+        ]
       },
     ];
 
     const bottomLinks: SidebarLinks = [
       {
         icon: $globals.icons.heart,
-        title: i18n.t("about.support"),
+        title: i18n.tc("about.support"),
         href: "https://github.com/sponsors/hay-kot",
+        restricted: true,
       },
     ];
 
@@ -110,6 +125,7 @@ export default defineComponent({
       sidebar,
       topLinks,
       bottomLinks,
+      developerLinks,
     };
   },
 });

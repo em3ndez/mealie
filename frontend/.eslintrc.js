@@ -23,7 +23,7 @@ module.exports = {
   ],
   // Re-add once we use nuxt bridge
   // See https://v3.nuxtjs.org/getting-started/bridge#update-nuxtconfig
-  ignorePatterns: ["nuxt.config.js"],
+  ignorePatterns: ["nuxt.config.js", "lib/api/types/**/*.ts"],
   plugins: ["prettier"],
   // add your custom rules here
   rules: {
@@ -35,6 +35,7 @@ module.exports = {
     "vue/singleline-html-element-content-newline": "off",
     "vue/multiline-html-element-content-newline": "off",
     "vue/no-mutating-props": "off",
+    "vue/no-v-text-v-html-on-component": "warn",
     "vue/no-v-for-template-key-on-child": "off",
     "vue/valid-v-slot": [
       "error",
@@ -48,7 +49,21 @@ module.exports = {
         "ts-ignore": "allow-with-description",
       },
     ],
+    "no-restricted-imports": [
+      "error",
+      { paths: ["@vue/reactivity", "@vue/runtime-dom", "@vue/composition-api", "vue-demi"] },
+    ],
+
     // TODO Gradually activate all rules
+    // Allow Promise in onMounted
+    "@typescript-eslint/no-misused-promises": [
+      "error",
+      {
+        checksVoidReturn: {
+          arguments: false,
+        },
+      },
+    ],
     "@typescript-eslint/no-unsafe-assignment": "off",
     "@typescript-eslint/no-unsafe-member-access": "off",
     "@typescript-eslint/explicit-module-boundary-types": "off",

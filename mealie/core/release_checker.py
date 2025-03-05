@@ -3,7 +3,7 @@ from functools import lru_cache
 
 import requests
 
-_LAST_RESET = None
+_LAST_RESET: datetime.datetime | None = None
 
 
 @lru_cache(maxsize=1)
@@ -32,10 +32,17 @@ def get_latest_version() -> str:
 
     global _LAST_RESET
 
-    now = datetime.datetime.now()
+    now = datetime.datetime.now(datetime.UTC)
 
     if not _LAST_RESET or now - _LAST_RESET > datetime.timedelta(days=MAX_DAYS_OLD):
         _LAST_RESET = now
         get_latest_github_release.cache_clear()
 
-    return get_latest_github_release()
+    try:
+        return get_latest_github_release()
+    except requests.RequestException:
+        return "error fetching version"
+    except KeyError:
+        return "error parsing response"
+    except Exception:
+        return "unknown error"

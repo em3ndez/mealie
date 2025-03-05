@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-from fastapi_camelcase import CamelModel
-from pydantic import UUID4
+from typing import ClassVar
+
+from pydantic import UUID4, ConfigDict
+
+from mealie.schema._mealie import MealieModel
+from mealie.schema.response.pagination import PaginationBase
 
 
-class MultiPurposeLabelCreate(CamelModel):
+class MultiPurposeLabelCreate(MealieModel):
     name: str
-    color: str = ""
+    color: str = "#959595"
 
 
 class MultiPurposeLabelSave(MultiPurposeLabelCreate):
@@ -18,21 +22,13 @@ class MultiPurposeLabelUpdate(MultiPurposeLabelSave):
 
 
 class MultiPurposeLabelSummary(MultiPurposeLabelUpdate):
-    pass
+    _searchable_properties: ClassVar[list[str]] = ["name"]
+    model_config = ConfigDict(from_attributes=True)
 
-    class Config:
-        orm_mode = True
+
+class MultiPurposeLabelPagination(PaginationBase):
+    items: list[MultiPurposeLabelSummary]
 
 
 class MultiPurposeLabelOut(MultiPurposeLabelUpdate):
-    # shopping_list_items: list[ShoppingListItemOut] = []
-    # foods: list[IngredientFood] = []
-
-    class Config:
-        orm_mode = True
-
-
-# from mealie.schema.recipe.recipe_ingredient import IngredientFood
-# from mealie.schema.group.group_shopping_list import ShoppingListItemOut
-
-# MultiPurposeLabelOut.update_forward_refs()
+    model_config = ConfigDict(from_attributes=True)

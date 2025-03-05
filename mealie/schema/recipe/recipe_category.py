@@ -1,9 +1,12 @@
-from fastapi_camelcase import CamelModel
-from pydantic import UUID4
-from pydantic.utils import GetterDict
+from pydantic import UUID4, ConfigDict
+from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.interfaces import LoaderOption
+
+from mealie.db.models.recipe import RecipeModel, Tag
+from mealie.schema._mealie import MealieModel
 
 
-class CategoryIn(CamelModel):
+class CategoryIn(MealieModel):
     name: str
 
 
@@ -14,29 +17,18 @@ class CategorySave(CategoryIn):
 class CategoryBase(CategoryIn):
     id: UUID4
     slug: str
-
-    class Config:
-        orm_mode = True
-
-        @classmethod
-        def getter_dict(_cls, name_orm):
-            return {
-                **GetterDict(name_orm),
-            }
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CategoryOut(CategoryBase):
     slug: str
-
-    class Config:
-        orm_mode = True
+    group_id: UUID4
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RecipeCategoryResponse(CategoryBase):
     recipes: "list[RecipeSummary]" = []
-
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TagIn(CategoryIn):
@@ -54,16 +46,20 @@ class TagBase(CategoryBase):
 class TagOut(TagSave):
     id: UUID4
     slug: str
-
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RecipeTagResponse(RecipeCategoryResponse):
-    pass
+    @classmethod
+    def loader_options(cls) -> list[LoaderOption]:
+        return [
+            selectinload(Tag.recipes).joinedload(RecipeModel.recipe_category),
+            selectinload(Tag.recipes).joinedload(RecipeModel.tags),
+            selectinload(Tag.recipes).joinedload(RecipeModel.tools),
+        ]
 
 
-from mealie.schema.recipe.recipe import RecipeSummary
+from mealie.schema.recipe.recipe import RecipeSummary  # noqa: E402
 
-RecipeCategoryResponse.update_forward_refs()
-RecipeTagResponse.update_forward_refs()
+RecipeCategoryResponse.model_rebuild()
+RecipeTagResponse.model_rebuild()

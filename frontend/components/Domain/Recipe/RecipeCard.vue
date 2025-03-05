@@ -3,10 +3,11 @@
     <v-hover v-slot="{ hover }" :open-delay="50">
       <v-card
         :class="{ 'on-hover': hover }"
+        :style="{ cursor }"
         :elevation="hover ? 12 : 2"
-        :to="route ? `/recipe/${slug}` : ''"
+        :to="recipeRoute"
         :min-height="imageHeight + 75"
-        @click="$emit('click')"
+        @click.self="$emit('click')"
       >
         <RecipeCardImage
           :icon-size="imageHeight"
@@ -19,34 +20,42 @@
           <v-expand-transition v-if="description">
             <div v-if="hover" class="d-flex transition-fast-in-fast-out secondary v-card--reveal" style="height: 100%">
               <v-card-text class="v-card--text-show white--text">
-                {{ description }}
+                <div class="descriptionWrapper">
+                  <SafeMarkdown :source="description" />
+                </div>
               </v-card-text>
             </div>
           </v-expand-transition>
         </RecipeCardImage>
-        <v-card-title class="my-n3 mb-n6">
+        <v-card-title class="my-n3 px-2 mb-n6">
           <div class="headerClass">
             {{ name }}
           </div>
         </v-card-title>
 
         <slot name="actions">
-          <v-card-actions>
-            <RecipeFavoriteBadge v-if="loggedIn" :slug="slug" show-always />
-            <RecipeRating :value="rating" :name="name" :slug="slug" :small="true" />
+          <v-card-actions v-if="showRecipeContent" class="px-1">
+            <RecipeFavoriteBadge v-if="isOwnGroup" class="absolute" :recipe-id="recipeId" show-always />
+
+            <RecipeRating class="pb-1" :value="rating" :recipe-id="recipeId" :slug="slug" :small="true" />
             <v-spacer></v-spacer>
-            <RecipeChips :truncate="true" :items="tags" :title="false" :limit="2" :small="true" :is-category="false" />
+            <RecipeChips :truncate="true" :items="tags" :title="false" :limit="2" :small="true" url-prefix="tags" v-on="$listeners" />
+
+            <!-- If we're not logged-in, no items display, so we hide this menu -->
             <RecipeContextMenu
+              v-if="isOwnGroup"
+              color="grey darken-2"
               :slug="slug"
               :name="name"
               :recipe-id="recipeId"
               :use-items="{
                 delete: false,
-                edit: true,
+                edit: false,
                 download: true,
                 mealplanner: true,
                 shoppingList: true,
                 print: false,
+                printPreferences: false,
                 share: true,
               }"
               @delete="$emit('delete', slug)"
@@ -60,12 +69,13 @@
 </template>
 
 <script lang="ts">
-import { computed, defineComponent, useContext } from "@nuxtjs/composition-api";
+import { computed, defineComponent, useContext, useRoute } from "@nuxtjs/composition-api";
 import RecipeFavoriteBadge from "./RecipeFavoriteBadge.vue";
 import RecipeChips from "./RecipeChips.vue";
 import RecipeContextMenu from "./RecipeContextMenu.vue";
 import RecipeCardImage from "./RecipeCardImage.vue";
 import RecipeRating from "./RecipeRating.vue";
+import { useLoggedInState } from "~/composables/use-logged-in-state";
 
 export default defineComponent({
   components: { RecipeFavoriteBadge, RecipeChips, RecipeContextMenu, RecipeRating, RecipeCardImage },
@@ -87,14 +97,14 @@ export default defineComponent({
       required: false,
       default: 0,
     },
+    ratingColor: {
+      type: String,
+      default: "secondary",
+    },
     image: {
       type: String,
       required: false,
       default: "abc123",
-    },
-    route: {
-      type: Boolean,
-      default: true,
     },
     tags: {
       type: Array,
@@ -109,14 +119,23 @@ export default defineComponent({
       default: 200,
     },
   },
-  setup() {
+  setup(props) {
     const { $auth } = useContext();
-    const loggedIn = computed(() => {
-      return $auth.loggedIn;
+    const { isOwnGroup } = useLoggedInState();
+
+    const route = useRoute();
+    const groupSlug = computed(() => route.value.params.groupSlug || $auth.user?.groupSlug || "");
+    const showRecipeContent = computed(() => props.recipeId && props.slug);
+    const recipeRoute = computed<string>(() => {
+      return showRecipeContent.value ? `/g/${groupSlug.value}/r/${props.slug}` : "";
     });
+    const cursor = computed(() => showRecipeContent.value ? "pointer" : "auto");
 
     return {
-      loggedIn,
+      isOwnGroup,
+      recipeRoute,
+      showRecipeContent,
+      cursor,
     };
   },
 });
@@ -139,5 +158,11 @@ export default defineComponent({
   word-break: normal;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.descriptionWrapper{
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 8;
+  overflow: hidden;
 }
 </style>

@@ -1,20 +1,19 @@
 from functools import cached_property
-from typing import Type
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import UUID4
 
-from mealie.core.exceptions import mealie_registered_exceptions
-from mealie.routes._base.abc_controller import BaseUserController
+from mealie.routes._base.base_controllers import BaseUserController
 from mealie.routes._base.controller import controller
-from mealie.routes._base.mixins import CrudMixins
-from mealie.schema.query import GetAll
+from mealie.routes._base.mixins import HttpRepo
 from mealie.schema.recipe.recipe_comments import (
     RecipeCommentCreate,
     RecipeCommentOut,
+    RecipeCommentPagination,
     RecipeCommentSave,
     RecipeCommentUpdate,
 )
+from mealie.schema.response.pagination import PaginationQuery
 from mealie.schema.response.responses import ErrorResponse, SuccessResponse
 
 router = APIRouter(prefix="/comments", tags=["Recipe: Comments"])
@@ -24,30 +23,36 @@ router = APIRouter(prefix="/comments", tags=["Recipe: Comments"])
 class RecipeCommentRoutes(BaseUserController):
     @cached_property
     def repo(self):
-        return self.deps.repos.comments
+        return self.repos.comments
 
     # =======================================================================
     # CRUD Operations
 
     @property
-    def mixins(self) -> CrudMixins:
-        return CrudMixins(self.repo, self.deps.logger, self.registered_exceptions, "An unexpected error occurred.")
+    def mixins(self) -> HttpRepo:
+        return HttpRepo(self.repo, self.logger, self.registered_exceptions, self.t("generic.server-error"))
 
     def _check_comment_belongs_to_user(self, item_id: UUID4) -> None:
         comment = self.repo.get_one(item_id)
-        if comment.user_id != self.deps.acting_user.id and not self.deps.acting_user.admin:
+        if comment.user_id != self.user.id and not self.user.admin:
             raise HTTPException(
                 status_code=403,
-                detail=ErrorResponse.response(message="Comment does not belong to user"),
+                detail=ErrorResponse(message="Comment does not belong to user"),
             )
 
-    @router.get("", response_model=list[RecipeCommentOut])
-    def get_all(self, q: GetAll = Depends(GetAll)):
-        return self.repo.get_all(start=q.start, limit=q.limit, override_schema=RecipeCommentOut)
+    @router.get("", response_model=RecipeCommentPagination)
+    def get_all(self, q: PaginationQuery = Depends(PaginationQuery)):
+        response = self.repo.page_all(
+            pagination=q,
+            override=RecipeCommentOut,
+        )
+
+        response.set_pagination_guides(router.url_path_for("get_all"), q.model_dump())
+        return response
 
     @router.post("", response_model=RecipeCommentOut, status_code=201)
     def create_one(self, data: RecipeCommentCreate):
-        save_data = RecipeCommentSave(text=data.text, user_id=self.deps.acting_user.id, recipe_id=data.recipe_id)
+        save_data = RecipeCommentSave(text=data.text, user_id=self.user.id, recipe_id=data.recipe_id)
         return self.mixins.create_one(save_data)
 
     @router.get("/{item_id}", response_model=RecipeCommentOut)

@@ -9,7 +9,7 @@
   >
     <BaseDialog
       v-model="deleteDialog"
-      :title="$t('recipe.delete-recipe')"
+      :title="$tc('recipe.delete-recipe')"
       color="error"
       :icon="$globals.icons.alertCircle"
       @confirm="emitDelete()"
@@ -20,56 +20,54 @@
     </BaseDialog>
 
     <v-spacer></v-spacer>
-    <div v-if="!value" class="custom-btn-group ma-1">
-      <RecipeFavoriteBadge v-if="loggedIn" class="mx-1" color="info" button-style :slug="slug" show-always />
-      <v-tooltip v-if="!locked" bottom color="info">
-        <template #activator="{ on, attrs }">
-          <v-btn fab small class="mx-1" color="info" v-bind="attrs" v-on="on" @click="$emit('input', true)">
-            <v-icon> {{ $globals.icons.edit }} </v-icon>
-          </v-btn>
-        </template>
-        <span>{{ $t("general.edit") }}</span>
-      </v-tooltip>
-      <v-tooltip v-else bottom color="info">
-        <template #activator="{ on, attrs }">
-          <v-btn fab small class="mx-1" color="info" v-bind="attrs" v-on="on">
-            <v-icon> {{ $globals.icons.lock }} </v-icon>
-          </v-btn>
-        </template>
-        <span> Locked by Owner </span>
-      </v-tooltip>
+    <div v-if="!open" class="custom-btn-group ma-1">
+      <RecipeFavoriteBadge v-if="loggedIn" class="ml-1" color="info" button-style :recipe-id="recipe.id" show-always />
+      <RecipeTimelineBadge v-if="loggedIn" button-style class="ml-1" :slug="recipe.slug" :recipe-name="recipe.name" />
+      <div v-if="loggedIn">
+        <v-tooltip v-if="canEdit" bottom color="info">
+          <template #activator="{ on, attrs }">
+            <v-btn fab small class="ml-1" color="info" v-bind="attrs" v-on="on" @click="$emit('edit', true)">
+              <v-icon> {{ $globals.icons.edit }} </v-icon>
+            </v-btn>
+          </template>
+          <span>{{ $t("general.edit") }}</span>
+        </v-tooltip>
+      </div>
 
-      <ClientOnly>
-        <RecipeContextMenu
-          show-print
-          :menu-top="false"
-          :name="name"
-          :slug="slug"
-          :menu-icon="$globals.icons.mdiDotsHorizontal"
-          fab
-          color="info"
-          :card-menu="false"
-          :recipe-id="recipeId"
-          :use-items="{
-            delete: false,
-            edit: false,
-            download: true,
-            mealplanner: true,
-            shoppingList: true,
-            print: true,
-            share: true,
-          }"
-          @print="$emit('print')"
-        />
-      </ClientOnly>
+      <RecipeContextMenu
+        show-print
+        :menu-top="false"
+        :name="recipe.name"
+        :slug="recipe.slug"
+        :menu-icon="$globals.icons.dotsVertical"
+        fab
+        color="info"
+        :card-menu="false"
+        :recipe="recipe"
+        :recipe-id="recipe.id"
+        :recipe-scale="recipeScale"
+        :use-items="{
+          edit: false,
+          download: loggedIn,
+          duplicate: loggedIn,
+          mealplanner: loggedIn,
+          shoppingList: loggedIn,
+          print: true,
+          printPreferences: true,
+          share: loggedIn,
+          recipeActions: true,
+          delete: loggedIn,
+        }"
+        class="ml-1"
+        @print="$emit('print')"
+      />
     </div>
-    <div v-if="value" class="custom-btn-group mb-">
+    <div v-if="open" class="custom-btn-group gapped">
       <v-btn
         v-for="(btn, index) in editorButtons"
         :key="index"
         :fab="$vuetify.breakpoint.xs"
         :small="$vuetify.breakpoint.xs"
-        class="mx-1"
         :color="btn.color"
         @click="emitHandler(btn.event)"
       >
@@ -84,6 +82,8 @@
 import { defineComponent, ref, useContext } from "@nuxtjs/composition-api";
 import RecipeContextMenu from "./RecipeContextMenu.vue";
 import RecipeFavoriteBadge from "./RecipeFavoriteBadge.vue";
+import RecipeTimelineBadge from "./RecipeTimelineBadge.vue";
+import { Recipe } from "~/lib/api/types/recipe";
 
 const SAVE_EVENT = "save";
 const DELETE_EVENT = "delete";
@@ -91,19 +91,27 @@ const CLOSE_EVENT = "close";
 const JSON_EVENT = "json";
 
 export default defineComponent({
-  components: { RecipeContextMenu, RecipeFavoriteBadge },
+  components: { RecipeContextMenu, RecipeFavoriteBadge, RecipeTimelineBadge },
   props: {
+    recipe: {
+      required: true,
+      type: Object as () => Recipe,
+    },
     slug: {
       required: true,
       type: String,
     },
+    recipeScale: {
+      type: Number,
+      default: 1,
+    },
+    open: {
+      required: true,
+      type: Boolean,
+    },
     name: {
       required: true,
       type: String,
-    },
-    value: {
-      type: Boolean,
-      default: false,
     },
     loggedIn: {
       type: Boolean,
@@ -113,7 +121,7 @@ export default defineComponent({
       required: true,
       type: String,
     },
-    locked: {
+    canEdit: {
       type: Boolean,
       default: false,
     },
@@ -155,16 +163,11 @@ export default defineComponent({
           context.emit(CLOSE_EVENT);
           context.emit("input", false);
           break;
-        case SAVE_EVENT:
-          context.emit(SAVE_EVENT);
-          break;
-        case JSON_EVENT:
-          context.emit(JSON_EVENT);
-          break;
         case DELETE_EVENT:
           deleteDialog.value = true;
           break;
         default:
+          context.emit(event);
           break;
       }
     }
@@ -188,6 +191,10 @@ export default defineComponent({
 .custom-btn-group {
   flex: 0, 1, auto;
   display: inline-flex;
+}
+
+.gapped {
+  gap: 0.25rem;
 }
 
 .vertical {

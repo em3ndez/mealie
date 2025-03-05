@@ -9,7 +9,8 @@
       color="accent"
       :small="small"
       dark
-      :to="`/recipes/${urlParam}/${category.slug}`"
+
+      @click.prevent="() => $emit('item-selected', category, urlPrefix)"
     >
       {{ truncateText(category.name) }}
     </v-chip>
@@ -17,7 +18,10 @@
 </template>
 
 <script lang="ts">
-import {computed, defineComponent} from "@nuxtjs/composition-api";
+import { computed, defineComponent, useContext, useRoute } from "@nuxtjs/composition-api";
+import { RecipeCategory, RecipeTag, RecipeTool } from "~/lib/api/types/recipe";
+
+export type UrlPrefixParam = "tags" | "categories" | "tools";
 
 export default defineComponent({
   props: {
@@ -26,16 +30,16 @@ export default defineComponent({
       default: false,
     },
     items: {
-      type: Array,
+      type: Array as () => RecipeCategory[] | RecipeTag[] | RecipeTool[],
       default: () => [],
     },
     title: {
       type: Boolean,
       default: false,
     },
-    isCategory: {
-      type: Boolean,
-      default: true,
+    urlPrefix: {
+      type: String as () => UrlPrefixParam,
+      default: "categories",
     },
     limit: {
       type: Number,
@@ -51,7 +55,13 @@ export default defineComponent({
     },
   },
   setup(props) {
-    const urlParam = computed(() => props.isCategory ? "categories" : "tags");
+    const { $auth } = useContext();
+
+    const route = useRoute();
+    const groupSlug = computed(() => route.value.params.groupSlug || $auth.user?.groupSlug || "")
+    const baseRecipeRoute = computed<string>(() => {
+      return `/g/${groupSlug.value}`
+    });
 
     function truncateText(text: string, length = 20, clamp = "...") {
       if (!props.truncate) return text;
@@ -62,9 +72,9 @@ export default defineComponent({
     }
 
     return {
-      urlParam,
+      baseRecipeRoute,
       truncateText,
-    }
+    };
   },
 });
 </script>
