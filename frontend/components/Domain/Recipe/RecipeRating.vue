@@ -1,32 +1,48 @@
 <template>
   <div @click.prevent>
-    <v-rating
-      v-model="rating"
-      :readonly="!loggedIn"
-      color="secondary"
-      background-color="secondary lighten-3"
-      length="5"
-      :dense="small ? true : undefined"
-      :size="small ? 15 : undefined"
-      hover
-      :value="value"
-      @input="updateRating"
-      @click="updateRating"
-    ></v-rating>
+    <!-- User Rating -->
+    <v-hover v-slot="{ hover }">
+      <v-rating
+        v-if="isOwnGroup && (userRating || hover || !ratingsLoaded)"
+        :value="userRating"
+        color="secondary"
+        background-color="secondary lighten-3"
+        length="5"
+        :dense="small ? true : undefined"
+        :size="small ? 15 : undefined"
+        hover
+        clearable
+        @input="updateRating"
+        @click="updateRating"
+      />
+      <!-- Group Rating -->
+      <v-rating
+        v-else
+        :value="groupRating"
+        :half-increments="true"
+        :readonly="true"
+        color="grey darken-1"
+        background-color="secondary lighten-3"
+        length="5"
+        :dense="small ? true : undefined"
+        :size="small ? 15 : undefined"
+        hover
+      />
+    </v-hover>
   </div>
 </template>
 
 <script lang="ts">
-import { computed, defineComponent, ref, useContext } from "@nuxtjs/composition-api";
-import { useUserApi } from "~/composables/api";
+import { computed, defineComponent, ref, watch } from "@nuxtjs/composition-api";
+import { useLoggedInState } from "~/composables/use-logged-in-state";
+import { useUserSelfRatings } from "~/composables/use-users";
 export default defineComponent({
   props: {
     emitOnly: {
       type: Boolean,
       default: false,
     },
-    // TODO Remove name prop?
-    name: {
+    recipeId: {
       type: String,
       default: "",
     },
@@ -44,25 +60,46 @@ export default defineComponent({
     },
   },
   setup(props, context) {
-    const { $auth } = useContext();
-    const loggedIn = computed(() => {
-      return $auth.loggedIn;
+    const { isOwnGroup } = useLoggedInState();
+    const { userRatings, setRating, ready: ratingsLoaded } = useUserSelfRatings();
+
+    const userRating = computed(() => {
+      return userRatings.value.find((r) => r.recipeId === props.recipeId)?.rating;
     });
 
-    const rating = ref(props.value);
+    // if a user unsets their rating, we don't want to fall back to the group rating since it's out of sync
+    const hideGroupRating = ref(!!userRating.value);
+    watch(
+      () => userRating.value,
+      () => {
+        if (userRating.value) {
+          hideGroupRating.value = true;
+        }
+      },
+    )
 
-    const api = useUserApi();
-    function updateRating(val: number) {
-      if (props.emitOnly) {
-        context.emit("input", val);
+    const groupRating = computed(() => {
+      return hideGroupRating.value ? 0 : props.value;
+    });
+
+    function updateRating(val: number | null) {
+      if (!isOwnGroup.value) {
         return;
       }
-      api.recipes.patchOne(props.slug, {
-        rating: val,
-      });
+
+      if (!props.emitOnly) {
+        setRating(props.slug, val || 0, null);
+      }
+      context.emit("input", val);
     }
 
-    return { loggedIn, rating, updateRating };
+    return {
+      isOwnGroup,
+      ratingsLoaded,
+      groupRating,
+      userRating,
+      updateRating,
+    };
   },
 });
 </script>

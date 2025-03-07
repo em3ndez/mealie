@@ -1,10 +1,26 @@
+import contextlib
+from collections.abc import Generator
+
 from pytest import MonkeyPatch, fixture
+
+
+def _clean_temp_dir():
+    with contextlib.suppress(Exception):
+        temp_dir = Path(__file__).parent / ".temp"
+
+        if temp_dir.exists():
+            import shutil
+
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+_clean_temp_dir()
 
 mp = MonkeyPatch()
 mp.setenv("PRODUCTION", "True")
 mp.setenv("TESTING", "True")
-
-
+mp.setenv("ALLOW_SIGNUP", "True")
+mp.setenv("OPENAI_API_KEY", "dummy-api-key")
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -29,16 +45,13 @@ def override_get_db():
 
 @fixture(scope="session")
 def api_client():
-
     app.dependency_overrides[generate_session] = override_get_db
 
     yield TestClient(app)
 
-    try:
+    with contextlib.suppress(Exception):
         settings = config.get_app_settings()
         settings.DB_PROVIDER.db_path.unlink()  # Handle SQLite Provider
-    except Exception:
-        pass
 
 
 @fixture(scope="session")
@@ -52,16 +65,8 @@ def test_image_png():
 
 
 @fixture(scope="session", autouse=True)
-def global_cleanup() -> None:
+def global_cleanup() -> Generator[None, None, None]:
     """Purges the .temp directory used for testing"""
+
     yield None
-    try:
-        temp_dir = Path(__file__).parent / ".temp"
-
-        if temp_dir.exists():
-            import shutil
-
-            shutil.rmtree(temp_dir, ignore_errors=True)
-
-    except Exception:
-        pass
+    _clean_temp_dir()

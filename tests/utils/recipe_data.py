@@ -1,16 +1,21 @@
 from dataclasses import dataclass
+from pathlib import Path
 
 from tests import data as test_data
 
 
-@dataclass
+@dataclass(slots=True)
 class RecipeSiteTestCase:
     url: str
     html: str
     expected_slug: str
     num_ingredients: int
     num_steps: int
-    html_file: str
+    html_file: Path
+
+    num_nutrition_entries: int = 0
+    include_tags: bool = False
+    expected_tags: set[str] | None = None
 
 
 def get_recipe_test_cases():
@@ -22,6 +27,7 @@ def get_recipe_test_cases():
             expected_slug="taiwanese-three-cup-chicken-san-bei-ji-recipe",
             num_ingredients=10,
             num_steps=3,
+            num_nutrition_entries=11,
         ),
         RecipeSiteTestCase(
             url="https://www.rezeptwelt.de/backen-herzhaft-rezepte/schinken-kaese-waffeln-ohne-viel-schnickschnack/4j0bkiig-94d4d-106529-cfcd2-is97x2ml",
@@ -44,7 +50,7 @@ def get_recipe_test_cases():
             html="jam-roly-poly-with-custard.html",
             html_file=test_data.html_jam_roly_poly_with_custard,
             expected_slug="jam-roly-poly-with-custard",
-            num_ingredients=13,
+            num_ingredients=11,
             num_steps=9,
         ),
         RecipeSiteTestCase(
@@ -53,7 +59,7 @@ def get_recipe_test_cases():
             html_file=test_data.html_sous_vide_shrimp,
             expected_slug="sous-vide-shrimp",
             num_ingredients=5,
-            num_steps=0,
+            num_steps=1,
         ),
         RecipeSiteTestCase(
             url="https://www.bonappetit.com/recipe/detroit-style-pepperoni-pizza",
@@ -62,6 +68,21 @@ def get_recipe_test_cases():
             expected_slug="detroit-style-pepperoni-pizza",
             num_ingredients=8,
             num_steps=5,
+            include_tags=True,
+            expected_tags={
+                "Pizza",
+                "Basil",
+                "Dough",
+                "Dinner",
+                "Oregano",
+                "Mozzarella",
+                "Olive Oil",
+                "Pizza Dough",
+                "Basically",
+                "Flour",
+                "Web",
+                "Web Recipe",
+            },
         ),
     ]
 

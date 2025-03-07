@@ -1,14 +1,17 @@
-from fastapi import HTTPException, status
+from fastapi import Depends, HTTPException, status
 from pydantic import UUID4
 
-from mealie.core import security
-from mealie.core.security import hash_password, verify_password
-from mealie.routes._base import BaseAdminController, controller
-from mealie.routes._base.abc_controller import BaseUserController
-from mealie.routes._base.mixins import CrudMixins
+from mealie.core.security import hash_password
+from mealie.core.security.providers.credentials_provider import CredentialsProvider
+from mealie.db.models.users.users import AuthMethod
+from mealie.routes._base import BaseAdminController, BaseUserController, controller
+from mealie.routes._base.mixins import HttpRepo
 from mealie.routes._base.routers import AdminAPIRouter, UserAPIRouter
 from mealie.routes.users._helpers import assert_user_change_allowed
+from mealie.schema.response import ErrorResponse, SuccessResponse
+from mealie.schema.response.pagination import PaginationQuery
 from mealie.schema.user import ChangePassword, UserBase, UserIn, UserOut
+from mealie.schema.user.user import UserPagination, UserRatings, UserRatingSummary
 
 user_router = UserAPIRouter(prefix="/users", tags=["Users: CRUD"])
 admin_router = AdminAPIRouter(prefix="/users", tags=["Users: Admin CRUD"])
@@ -17,12 +20,20 @@ admin_router = AdminAPIRouter(prefix="/users", tags=["Users: Admin CRUD"])
 @controller(admin_router)
 class AdminUserController(BaseAdminController):
     @property
-    def mixins(self) -> CrudMixins:
-        return CrudMixins[UserIn, UserOut, UserBase](self.repos.users, self.deps.logger)
+    def mixins(self) -> HttpRepo:
+        return HttpRepo[UserIn, UserOut, UserBase](self.repos.users, self.logger)
 
-    @admin_router.get("", response_model=list[UserOut])
-    def get_all_users(self):
-        return self.repos.users.get_all()
+    @admin_router.get("", response_model=UserPagination)
+    def get_all(self, q: PaginationQuery = Depends(PaginationQuery)):
+        """Returns all users from all groups"""
+
+        response = self.repos.users.page_all(
+            pagination=q,
+            override=UserOut,
+        )
+
+        response.set_pagination_guides(admin_router.url_path_for("get_all"), q.model_dump())
+        return response
 
     @admin_router.post("", response_model=UserOut, status_code=201)
     def create_user(self, new_user: UserIn):
@@ -35,13 +46,6 @@ class AdminUserController(BaseAdminController):
 
     @admin_router.delete("/{item_id}")
     def delete_user(self, item_id: UUID4):
-        """Removes a user from the database. Must be the current user or a super user"""
-
-        assert_user_change_allowed(item_id, self.user)
-
-        if item_id == 1:  # TODO: identify super_user
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="SUPER_USER")
-
         self.mixins.delete_one(item_id)
 
 
@@ -51,29 +55,58 @@ class UserController(BaseUserController):
     def get_logged_in_user(self):
         return self.user
 
-    @user_router.put("/{item_id}")
-    def update_user(self, item_id: UUID4, new_data: UserBase):
-        assert_user_change_allowed(item_id, self.user)
+    @user_router.get("/self/ratings", response_model=UserRatings[UserRatingSummary])
+    def get_logged_in_user_ratings(self):
+        return UserRatings(ratings=self.repos.user_ratings.get_by_user(self.user.id))
 
-        if not self.user.admin and (new_data.admin or self.user.group != new_data.group):
-            # prevent a regular user from doing admin tasks on themself
-            raise HTTPException(status.HTTP_403_FORBIDDEN)
+    @user_router.get("/self/ratings/{recipe_id}", response_model=UserRatingSummary)
+    def get_logged_in_user_rating_for_recipe(self, recipe_id: UUID4):
+        user_rating = self.repos.user_ratings.get_by_user_and_recipe(self.user.id, recipe_id)
+        if user_rating:
+            return user_rating
+        else:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                ErrorResponse.respond("User has not rated this recipe"),
+            )
 
-        if self.user.id == item_id and self.user.admin and not new_data.admin:
-            # prevent an admin from demoting themself
-            raise HTTPException(status.HTTP_403_FORBIDDEN)
+    @user_router.get("/self/favorites", response_model=UserRatings[UserRatingSummary])
+    def get_logged_in_user_favorites(self):
+        return UserRatings(ratings=self.repos.user_ratings.get_by_user(self.user.id, favorites_only=True))
 
-        self.repos.users.update(item_id, new_data.dict())
-
-        if self.user.id == item_id:
-            access_token = security.create_access_token(data=dict(sub=str(self.user.id)))
-            return {"access_token": access_token, "token_type": "bearer"}
-
-    @user_router.put("/{item_id}/password")
+    @user_router.put("/password")
     def update_password(self, password_change: ChangePassword):
         """Resets the User Password"""
-        if not verify_password(password_change.current_password, self.user.password):
-            raise HTTPException(status.HTTP_400_BAD_REQUEST)
+        if self.user.password == "LDAP" or self.user.auth_method == AuthMethod.LDAP:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, ErrorResponse.respond(self.t("user.ldap-update-password-unavailable"))
+            )
+        if not CredentialsProvider.verify_password(password_change.current_password, self.user.password):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, ErrorResponse.respond(self.t("user.invalid-current-password"))
+            )
 
         self.user.password = hash_password(password_change.new_password)
-        return self.repos.users.update_password(self.user.id, self.user.password)
+        try:
+            self.repos.users.update_password(self.user.id, self.user.password)
+        except Exception as e:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                ErrorResponse.respond("Failed to update password"),
+            ) from e
+
+        return SuccessResponse.respond(self.t("user.password-updated"))
+
+    @user_router.put("/{item_id}")
+    def update_user(self, item_id: UUID4, new_data: UserBase):
+        assert_user_change_allowed(item_id, self.user, new_data)
+
+        try:
+            self.repos.users.update(item_id, new_data.model_dump())
+        except Exception as e:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                ErrorResponse.respond("Failed to update user"),
+            ) from e
+
+        return SuccessResponse.respond(self.t("user.user-updated"))

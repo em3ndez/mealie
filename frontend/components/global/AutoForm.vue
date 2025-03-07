@@ -15,19 +15,29 @@
           v-if="inputField.type === fieldTypes.BOOLEAN"
           v-model="value[inputField.varName]"
           class="my-0 py-0"
-          :label="inputField.label"
           :name="inputField.varName"
-          :hint="inputField.hint || ''"
-          :disabled="updateMode && inputField.disableUpdate"
+          :disabled="(inputField.disableUpdate && updateMode) || (!updateMode && inputField.disableCreate) || (disabledFields && disabledFields.includes(inputField.varName))"
           @change="emitBlur"
-        />
+        >
+          <template #label>
+            <div>
+              <v-card-text class="text-body-1 my-0 py-0">
+                {{ inputField.label }}
+              </v-card-text>
+              <v-card-text v-if="inputField.hint" class="text-caption my-0 py-0">
+                {{ inputField.hint }}
+              </v-card-text>
+            </div>
+          </template>
+        </v-checkbox>
+
 
         <!-- Text Field -->
         <v-text-field
           v-else-if="inputField.type === fieldTypes.TEXT || inputField.type === fieldTypes.PASSWORD"
           v-model="value[inputField.varName]"
-          :readonly="inputField.disableUpdate && updateMode"
-          :disabled="inputField.disableUpdate && updateMode"
+          :readonly="(inputField.disableUpdate && updateMode) || (!updateMode && inputField.disableCreate) || (readonlyFields && readonlyFields.includes(inputField.varName))"
+          :disabled="(inputField.disableUpdate && updateMode) || (!updateMode && inputField.disableCreate) || (disabledFields && disabledFields.includes(inputField.varName))"
           filled
           :type="inputField.type === fieldTypes.PASSWORD ? 'password' : 'text'"
           rounded
@@ -46,8 +56,8 @@
         <v-textarea
           v-else-if="inputField.type === fieldTypes.TEXT_AREA"
           v-model="value[inputField.varName]"
-          :readonly="inputField.disableUpdate && updateMode"
-          :disabled="inputField.disableUpdate && updateMode"
+          :readonly="(inputField.disableUpdate && updateMode) || (!updateMode && inputField.disableCreate) || (readonlyFields && readonlyFields.includes(inputField.varName))"
+          :disabled="(inputField.disableUpdate && updateMode) || (!updateMode && inputField.disableCreate) || (disabledFields && disabledFields.includes(inputField.varName))"
           filled
           rounded
           class="rounded-lg"
@@ -66,7 +76,8 @@
         <v-select
           v-else-if="inputField.type === fieldTypes.SELECT"
           v-model="value[inputField.varName]"
-          :readonly="inputField.disableUpdate && updateMode"
+          :readonly="(inputField.disableUpdate && updateMode) || (!updateMode && inputField.disableCreate) || (readonlyFields && readonlyFields.includes(inputField.varName))"
+          :disabled="(inputField.disableUpdate && updateMode) || (!updateMode && inputField.disableCreate) || (disabledFields && disabledFields.includes(inputField.varName))"
           filled
           rounded
           class="rounded-lg"
@@ -74,7 +85,11 @@
           :label="inputField.label"
           :name="inputField.varName"
           :items="inputField.options"
+          :item-text="inputField.itemText"
+          :item-value="inputField.itemValue"
           :return-object="false"
+          :hint="inputField.hint"
+          persistent-hint
           lazy-validation
           @blur="emitBlur"
         >
@@ -129,7 +144,9 @@
           </div>
           <v-card-actions>
             <v-spacer />
-            <BaseButton small @click="value[inputField.varName].push(getTemplate(inputField.items))"> New </BaseButton>
+            <BaseButton small @click="value[inputField.varName].push(getTemplate(inputField.items))">
+              {{ $t("general.new") }}
+            </BaseButton>
           </v-card-actions>
         </div>
       </v-col>
@@ -144,6 +161,8 @@ import { fieldTypes } from "@/composables/forms";
 import { AutoFormItems } from "~/types/auto-forms";
 
 const BLUR_EVENT = "blur";
+
+type ValidatorKey = keyof typeof validators;
 
 export default defineComponent({
   name: "AutoForm",
@@ -176,23 +195,39 @@ export default defineComponent({
       default: false,
       type: Boolean,
     },
+    disabledFields: {
+      default: null,
+      type: Array as () => string[],
+    },
+    readonlyFields: {
+      default: null,
+      type: Array as () => string[],
+    },
   },
   setup(props, context) {
-    function rulesByKey(keys?: string[] | null) {
+    function rulesByKey(keys?: ValidatorKey[] | null) {
       if (keys === undefined || keys === null) {
         return [];
       }
 
-      const list = [] as ((v: string) => (boolean | string))[];
+      const list = [] as ((v: string) => boolean | string)[];
       keys.forEach((key) => {
-        if (key in validators) {
-          list.push(validators[key]);
+        const split = key.split(":");
+        const validatorKey = split[0] as ValidatorKey;
+        if (validatorKey in validators) {
+          if (split.length === 1) {
+            // @ts-ignore- validators[validatorKey] is a function
+            list.push(validators[validatorKey]);
+          } else {
+            // @ts-ignore - validators[validatorKey] is a function
+            list.push(validators[validatorKey](split[1]));
+          }
         }
       });
       return list;
     }
 
-    const defaultRules = computed(() => rulesByKey(props.globalRules));
+    const defaultRules = computed(() => rulesByKey(props.globalRules as ValidatorKey[]));
 
     function removeByIndex(list: never[], index: number) {
       // Removes the item at the index

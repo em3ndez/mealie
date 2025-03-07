@@ -1,16 +1,24 @@
-from typing import Optional
+from pydantic import ConfigDict
+from pydantic.alias_generators import to_camel
 
-from fastapi_camelcase import CamelModel
+from mealie.schema._mealie import MealieModel
 
 
-class Nutrition(CamelModel):
-    calories: Optional[str]
-    fat_content: Optional[str]
-    protein_content: Optional[str]
-    carbohydrate_content: Optional[str]
-    fiber_content: Optional[str]
-    sodium_content: Optional[str]
-    sugar_content: Optional[str]
+class Nutrition(MealieModel):
+    calories: str | None = None
+    carbohydrate_content: str | None = None
+    cholesterol_content: str | None = None
+    fat_content: str | None = None
+    fiber_content: str | None = None
+    protein_content: str | None = None
+    saturated_fat_content: str | None = None
+    sodium_content: str | None = None
+    sugar_content: str | None = None
+    trans_fat_content: str | None = None
+    unsaturated_fat_content: str | None = None
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(
+        from_attributes=True,
+        coerce_numbers_to_str=True,
+        alias_generator=to_camel,
+    )

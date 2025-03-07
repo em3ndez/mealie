@@ -1,29 +1,31 @@
-from uuid import UUID
+from sqlalchemy import or_, select
 
-from sqlalchemy import or_
-
-from mealie.db.models.group.mealplan import GroupMealPlanRules
+from mealie.db.models.household.mealplan import GroupMealPlanRules
 from mealie.schema.meal_plan.plan_rules import PlanRulesDay, PlanRulesOut, PlanRulesType
 
-from .repository_generic import RepositoryGeneric
+from .repository_generic import HouseholdRepositoryGeneric
 
 
-class RepositoryMealPlanRules(RepositoryGeneric[PlanRulesOut, GroupMealPlanRules]):
-    def by_group(self, group_id: UUID) -> "RepositoryMealPlanRules":
-        return super().by_group(group_id)
-
+class RepositoryMealPlanRules(HouseholdRepositoryGeneric[PlanRulesOut, GroupMealPlanRules]):
     def get_rules(self, day: PlanRulesDay, entry_type: PlanRulesType) -> list[PlanRulesOut]:
-        qry = self.session.query(GroupMealPlanRules).filter(
+        stmt = select(GroupMealPlanRules).filter(
             or_(
-                GroupMealPlanRules.day.is_(day),
+                GroupMealPlanRules.day == day,
                 GroupMealPlanRules.day.is_(None),
-                GroupMealPlanRules.day.is_(PlanRulesDay.unset.value),
+                GroupMealPlanRules.day == PlanRulesDay.unset.value,
             ),
             or_(
-                GroupMealPlanRules.entry_type.is_(entry_type),
+                GroupMealPlanRules.entry_type == entry_type,
                 GroupMealPlanRules.entry_type.is_(None),
-                GroupMealPlanRules.entry_type.is_(PlanRulesType.unset.value),
+                GroupMealPlanRules.entry_type == PlanRulesType.unset.value,
             ),
         )
 
-        return [self.schema.from_orm(x) for x in qry.all()]
+        if self.group_id:
+            stmt = stmt.filter(GroupMealPlanRules.group_id == self.group_id)
+        if self.household_id:
+            stmt = stmt.filter(GroupMealPlanRules.household_id == self.household_id)
+
+        rules = self.session.execute(stmt).scalars().all()
+
+        return [self.schema.model_validate(x) for x in rules]

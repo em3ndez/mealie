@@ -1,7 +1,7 @@
 # Development Road Map
 
 ## Feature Requests
-See the [Github META issue for tracking feature requests](https://github.com/hay-kot/mealie/issues/122)
+[Please request new features on Github](https://github.com/mealie-recipes/mealie/discussions/new?category=feature-request)
 
-## Progress 
-See the [Github Projects](https://github.com/hay-kot/mealie/projects) to see what is currently being worked on
+## Progress
+See the [Github Projects page](https://github.com/users/hay-kot/projects/2) to see what is currently being worked on

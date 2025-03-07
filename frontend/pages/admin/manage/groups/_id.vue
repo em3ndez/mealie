@@ -4,15 +4,15 @@
       <template #header>
         <v-img max-height="125" max-width="125" :src="require('~/static/svgs/manage-group-settings.svg')"></v-img>
       </template>
-      <template #title> Admin Group Management </template>
-      Changes to this group will be reflected immediately.
+      <template #title> {{ $t('group.admin-group-management') }} </template>
+      {{ $t('group.admin-group-management-text') }}
     </BasePageTitle>
     <AppToolbar back> </AppToolbar>
-    <v-card-text> Group Id: {{ group.id }} </v-card-text>
+    <v-card-text> {{ $t('group.group-id-value', [group.id]) }} </v-card-text>
     <v-form v-if="!userError" ref="refGroupEditForm" @submit.prevent="handleSubmit">
       <v-card outlined>
         <v-card-text>
-          <v-text-field v-model="group.name" label="Group Name"> </v-text-field>
+          <v-text-field v-model="group.name" :label="$t('group.group-name')"> </v-text-field>
           <GroupPreferencesEditor v-if="group.preferences" v-model="group.preferences" />
         </v-card-text>
       </v-card>
@@ -24,12 +24,12 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, useRoute, onMounted, ref } from "@nuxtjs/composition-api";
+import { defineComponent, useRoute, onMounted, ref, useContext } from "@nuxtjs/composition-api";
 import GroupPreferencesEditor from "~/components/Domain/Group/GroupPreferencesEditor.vue";
 import { useAdminApi } from "~/composables/api";
 import { alert } from "~/composables/use-toast";
+import { GroupInDB } from "~/lib/api/types/user";
 import { VForm } from "~/types/vuetify";
-import { GroupRead } from "~/api/admin/admin-groups";
 
 export default defineComponent({
   components: {
@@ -38,6 +38,8 @@ export default defineComponent({
   layout: "admin",
   setup() {
     const route = useRoute();
+
+    const { i18n } = useContext();
 
     const groupId = route.value.params.id;
 
@@ -48,7 +50,7 @@ export default defineComponent({
 
     const adminApi = useAdminApi();
 
-    const group = ref<GroupRead | null>(null);
+    const group = ref<GroupInDB | null>(null);
 
     const userError = ref(false);
 
@@ -56,7 +58,7 @@ export default defineComponent({
       const { data, error } = await adminApi.groups.getOne(groupId);
 
       if (error?.response?.status === 404) {
-        alert.error("User Not Found");
+        alert.error(i18n.tc("user.user-not-found"));
         userError.value = true;
       }
 
@@ -72,7 +74,13 @@ export default defineComponent({
 
       const { response, data } = await adminApi.groups.updateOne(group.value.id, group.value);
       if (response?.status === 200 && data) {
+        if (group.value.slug !== data.slug) {
+          // the slug updated, which invalidates the nav URLs
+          window.location.reload();
+        }
         group.value = data;
+      } else {
+        alert.error(i18n.tc("settings.settings-update-failed"));
       }
     }
 

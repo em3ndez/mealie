@@ -1,7 +1,7 @@
 <template>
   <VJsoneditor
     :value="value"
-    height="1500px"
+    :height="height"
     :options="options"
     :attrs="$attrs"
     @input="$emit('input', $event)"
@@ -20,6 +20,10 @@ export default defineComponent({
       type: Object,
       default: () => ({}),
     },
+    height: {
+      type: String,
+      default: "1500px",
+    },
     options: {
       type: Object,
       default: () => ({}),
@@ -27,4 +31,3 @@ export default defineComponent({
   },
 });
 </script>
-

@@ -5,11 +5,18 @@
       v-model="dialog"
       absolute
       :width="width"
+      :max-width="maxWidth"
       :content-class="top ? 'top-dialog' : undefined"
       :fullscreen="$vuetify.breakpoint.xsOnly"
+      @keydown.enter="
+        $emit('submit');
+        dialog = false;
+      "
+      @click:outside="$emit('cancel')"
+      @keydown.esc="$emit('cancel')"
     >
       <v-card height="100%">
-        <v-app-bar dark :color="color" class="mt-n1">
+        <v-app-bar dark dense :color="color" class="">
           <v-icon large left>
             {{ icon }}
           </v-icon>
@@ -38,11 +45,13 @@
             </v-btn>
             <v-spacer></v-spacer>
 
+            <slot name="custom-card-action"></slot>
             <BaseButton v-if="$listeners.delete" delete secondary @click="deleteEvent" />
             <BaseButton
               v-if="$listeners.confirm"
               :color="color"
               type="submit"
+              :disabled="submitDisabled"
               @click="
                 $emit('confirm');
                 dialog = false;
@@ -53,8 +62,16 @@
               </template>
               {{ $t("general.confirm") }}
             </BaseButton>
-            <BaseButton v-if="$listeners.submit" type="submit" @click="submitEvent">
+            <BaseButton
+              v-if="$listeners.submit"
+              type="submit"
+              :disabled="submitDisabled"
+              @click="submitEvent"
+            >
               {{ submitText }}
+              <template v-if="submitIcon" #icon>
+                {{ submitIcon }}
+              </template>
             </BaseButton>
           </slot>
         </v-card-actions>
@@ -92,6 +109,10 @@ export default defineComponent({
       type: [Number, String],
       default: "500",
     },
+    maxWidth: {
+      type: [Number, String],
+      default: null,
+    },
     loading: {
       type: Boolean,
       default: false,
@@ -100,9 +121,19 @@ export default defineComponent({
       default: null,
       type: Boolean,
     },
+    submitIcon: {
+      type: String,
+      default: null,
+    },
     submitText: {
       type: String,
-      default: () => "Create",
+      default: function () {
+        return this.$t("general.create");
+      },
+    },
+    submitDisabled: {
+      type: Boolean,
+      default: false,
     },
     keepOpen: {
       default: false,

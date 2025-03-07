@@ -1,19 +1,37 @@
-<template>
-  <div>
-    <v-chip
-      v-for="(time, index) in allTimes"
-      :key="index"
-      :small="$vuetify.breakpoint.smAndDown"
-      label
-      color="accent custom-transparent"
-      class="ma-1"
-    >
-      <v-icon left>
-        {{ $globals.icons.clockOutline }}
-      </v-icon>
-      {{ time.name }} |
-      {{ time.value }}
-    </v-chip>
+<template v-if="showCards">
+  <div class="text-center">
+    <!-- Total Time -->
+    <div v-if="validateTotalTime" class="time-card-flex mx-auto">
+      <v-row no-gutters class="d-flex flex-no-wrap align-center " :style="fontSize">
+        <v-icon :x-large="!small" left color="primary">
+          {{ $globals.icons.clockOutline }}
+        </v-icon>
+        <p class="my-0"><span class="font-weight-bold">{{ validateTotalTime.name }}</span><br>{{ validateTotalTime.value }}</p>
+      </v-row>
+    </div>
+    <v-divider v-if="validateTotalTime && (validatePrepTime || validatePerformTime)" class="my-2" />
+    <!-- Prep Time & Perform Time -->
+    <div v-if="validatePrepTime || validatePerformTime" class="time-card-flex mx-auto">
+      <v-row
+        no-gutters
+        class="d-flex justify-center align-center" :class="{'flex-column': $vuetify.breakpoint.smAndDown}"
+        style="width: 100%;" :style="fontSize"
+      >
+        <div v-if="validatePrepTime" class="d-flex flex-no-wrap my-1">
+          <v-icon :large="!small" :dense="small" left color="primary">
+            {{ $globals.icons.knfife }}
+          </v-icon>
+          <p class="my-0"><span class="font-weight-bold">{{ validatePrepTime.name }}</span><br>{{ validatePrepTime.value }}</p>
+        </div>
+        <v-divider v-if="validatePrepTime && validatePerformTime" vertical class="mx-4" />
+        <div v-if="validatePerformTime" class="d-flex flex-no-wrap my-1">
+          <v-icon :large="!small" :dense="small" left color="primary">
+            {{ $globals.icons.potSteam }}
+          </v-icon>
+          <p class="my-0"><span class="font-weight-bold">{{ validatePerformTime.name }}</span><br>{{ validatePerformTime.value }}</p>
+        </div>
+      </v-row>
+    </div>
   </div>
 </template>
 
@@ -33,6 +51,14 @@ export default defineComponent({
     performTime: {
       type: String,
       default: null,
+    },
+    color: {
+      type: String,
+      default: "accent custom-transparent"
+    },
+    small: {
+      type: Boolean,
+      default: false,
     },
   },
   setup(props) {
@@ -58,13 +84,16 @@ export default defineComponent({
       return !isEmpty(props.performTime) ? { name: i18n.t("recipe.perform-time"), value: props.performTime } : null;
     });
 
-    const allTimes = computed(() => {
-      return [validateTotalTime.value, validatePrepTime.value, validatePerformTime.value].filter((x) => x !== null);
+    const fontSize = computed(() => {
+      return props.small ? { fontSize: "smaller" } : { fontSize: "larger" };
     });
 
     return {
       showCards,
-      allTimes,
+      validateTotalTime,
+      validatePrepTime,
+      validatePerformTime,
+      fontSize,
     };
   },
 });

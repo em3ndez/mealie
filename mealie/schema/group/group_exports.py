@@ -1,10 +1,11 @@
 from datetime import datetime
 
-from fastapi_camelcase import CamelModel
-from pydantic import UUID4
+from pydantic import UUID4, ConfigDict
+
+from mealie.schema._mealie import MealieModel
 
 
-class GroupDataExport(CamelModel):
+class GroupDataExport(MealieModel):
     id: UUID4
     group_id: UUID4
     name: str
@@ -12,6 +13,4 @@ class GroupDataExport(CamelModel):
     path: str
     size: str
     expires: datetime
-
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)

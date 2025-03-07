@@ -1,105 +1,143 @@
-import { useAsync, ref } from "@nuxtjs/composition-api";
+import { useAsync, useRouter, ref } from "@nuxtjs/composition-api";
 import { useAsyncKey } from "../use-utils";
+import { usePublicExploreApi } from "~/composables/api/api-client";
 import { useUserApi } from "~/composables/api";
-import { Recipe } from "~/types/api-types/recipe";
+import { OrderByNullPosition, Recipe } from "~/lib/api/types/recipe";
+import { RecipeSearchQuery } from "~/lib/api/user/recipes/recipe";
 
 export const allRecipes = ref<Recipe[]>([]);
 export const recentRecipes = ref<Recipe[]>([]);
 
-const rand = (n: number) => Math.floor(Math.random() * n);
-
-function swap(t: Array<unknown>, i: number, j: number) {
-  const q = t[i];
-  t[i] = t[j];
-  t[j] = q;
-  return t;
-}
-
-export const useSorter = () => {
-  function sortAToZ(list: Array<Recipe>) {
-    list.sort((a, b) => {
-      const textA = a.name?.toUpperCase() ?? "";
-      const textB = b.name?.toUpperCase() ?? "";
-      return textA < textB ? -1 : textA > textB ? 1 : 0;
-    });
-  }
-  function sortByCreated(list: Array<Recipe>) {
-    list.sort((a, b) => ((a.dateAdded ?? "") > (b.dateAdded ?? "") ? -1 : 1));
-  }
-  function sortByUpdated(list: Array<Recipe>) {
-    list.sort((a, b) => ((a.dateUpdated ?? "") > (b.dateUpdated ?? "") ? -1 : 1));
-  }
-  function sortByRating(list: Array<Recipe>) {
-    list.sort((a, b) => ((a.rating ?? 0) > (b.rating ?? 0) ? -1 : 1));
-  }
-
-  function randomRecipe(list: Array<Recipe>): Recipe {
-    return list[Math.floor(Math.random() * list.length)];
-  }
-
-  function shuffle(list: Array<Recipe>) {
-    let last = list.length;
-    let n;
-    while (last > 0) {
-      n = rand(last);
-      swap(list, n, --last);
-    }
-  }
-
+function getParams(
+  orderBy: string | null = null,
+  orderDirection = "desc",
+  orderByNullPosition: OrderByNullPosition | null = null,
+  query: RecipeSearchQuery | null = null,
+  queryFilter: string | null = null
+) {
   return {
-    sortAToZ,
-    sortByCreated,
-    sortByUpdated,
-    sortByRating,
-    randomRecipe,
-    shuffle,
+    orderBy,
+    orderDirection,
+    orderByNullPosition,
+    paginationSeed: query?._searchSeed, // propagate searchSeed to stabilize random order pagination
+    searchSeed: query?._searchSeed, // unused, but pass it along for completeness of data
+    search: query?.search,
+    cookbook: query?.cookbook,
+    households: query?.households,
+    categories: query?.categories,
+    requireAllCategories: query?.requireAllCategories,
+    tags: query?.tags,
+    requireAllTags: query?.requireAllTags,
+    tools: query?.tools,
+    requireAllTools: query?.requireAllTools,
+    foods: query?.foods,
+    requireAllFoods: query?.requireAllFoods,
+    queryFilter,
   };
 };
 
-export const useLazyRecipes = function () {
-  const api = useUserApi();
+export const useLazyRecipes = function (publicGroupSlug: string | null = null) {
+  const router = useRouter();
+
+  // passing the group slug switches to using the public API
+  const api = publicGroupSlug ? usePublicExploreApi(publicGroupSlug).explore : useUserApi();
 
   const recipes = ref<Recipe[]>([]);
 
-  async function fetchMore(start: number, limit: number) {
-    const { data } = await api.recipes.getAll(start, limit);
-    if (data) {
-      data.forEach((recipe) => {
-        recipes.value?.push(recipe);
-      });
+  async function fetchMore(
+    page: number,
+    perPage: number,
+    orderBy: string | null = null,
+    orderDirection = "desc",
+    orderByNullPosition: OrderByNullPosition | null = null,
+    query: RecipeSearchQuery | null = null,
+    queryFilter: string | null = null,
+  ) {
+
+    const { data, error } = await api.recipes.getAll(
+      page,
+      perPage,
+      getParams(orderBy, orderDirection, orderByNullPosition, query, queryFilter),
+    );
+
+    if (error?.response?.status === 404) {
+      router.push("/login");
+    }
+
+    return data ? data.items : [];
+  }
+
+  function appendRecipes(val: Array<Recipe>) {
+    val.forEach((recipe) => {
+      recipes.value.push(recipe);
+    });
+  }
+
+  function assignSorted(val: Array<Recipe>) {
+    recipes.value = val;
+  }
+
+  function removeRecipe(slug: string) {
+    for (let i = 0; i < recipes?.value?.length; i++) {
+      if (recipes?.value[i].slug === slug) {
+        recipes?.value.splice(i, 1);
+        break;
+      }
+    }
+  }
+
+  function replaceRecipes(val: Array<Recipe>) {
+    recipes.value = val;
+  }
+
+  async function getRandom(query: RecipeSearchQuery | null = null, queryFilter: string | null = null) {
+    const { data } = await api.recipes.getAll(1, 1, getParams("random", "desc", null, query, queryFilter));
+    if (data?.items.length) {
+      return data.items[0];
     }
   }
 
   return {
     recipes,
     fetchMore,
+    appendRecipes,
+    assignSorted,
+    removeRecipe,
+    replaceRecipes,
+    getRandom,
   };
 };
 
-export const useRecipes = (all = false, fetchRecipes = true) => {
-  const api = useUserApi();
+export const useRecipes = (
+  all = false,
+  fetchRecipes = true,
+  loadFood = false,
+  queryFilter: string | null = null,
+  publicGroupSlug: string | null = null
+) => {
+  const api = publicGroupSlug ? usePublicExploreApi(publicGroupSlug).explore : useUserApi();
 
   // recipes is non-reactive!!
-  const { recipes, start, end } = (() => {
+  const { recipes, page, perPage } = (() => {
     if (all) {
       return {
         recipes: allRecipes,
-        start: 0,
-        end: 9999,
+        page: 1,
+        perPage: -1,
       };
     } else {
       return {
         recipes: recentRecipes,
-        start: 0,
-        end: 30,
+        page: 1,
+        perPage: 30,
       };
     }
   })();
 
   async function refreshRecipes() {
-    const { data } = await api.recipes.getAll(start, end);
+    const { data } = await api.recipes.getAll(page, perPage, { loadFood, orderBy: "created_at", queryFilter });
     if (data) {
-      recipes.value = data;
+      recipes.value = data.items;
     }
   }
 

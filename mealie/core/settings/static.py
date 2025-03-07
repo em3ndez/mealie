@@ -1,7 +1,9 @@
 from pathlib import Path
 
-APP_VERSION = "v1.0.0b"
-DB_VERSION = "v1.0.0b"
+from mealie import __version__
+
+APP_VERSION = __version__
 
 CWD = Path(__file__).parent
+PACKAGE_DIR = CWD.parent.parent
 BASE_DIR = CWD.parent.parent.parent

@@ -4,14 +4,13 @@ from mealie.core.config import get_app_settings
 from mealie.services.email import EmailService
 from mealie.services.email.email_senders import ABCEmailSender
 
-FAKE_ADDRESS = "my_secret_email@email.com"
+FAKE_ADDRESS = "my_secret_email@example.com"
 
-SUBJECTS = {"Mealie Forgot Password", "Invitation to join Mealie", "Test Email"}
+SUBJECTS = {"Mealie Forgot Password", "Invitation to join Mealie", "Mealie Test Email"}
 
 
 class TestEmailSender(ABCEmailSender):
     def send(self, email_to: str, subject: str, html: str) -> bool:
-
         # check email_to:
         assert email_to == FAKE_ADDRESS
 
@@ -28,7 +27,7 @@ class TestEmailSender(ABCEmailSender):
 def patch_env(monkeypatch):
     monkeypatch.setenv("SMTP_HOST", "email.mealie.io")
     monkeypatch.setenv("SMTP_PORT", "587")
-    monkeypatch.setenv("SMTP_TLS", "True")
+    monkeypatch.setenv("SMTP_AUTH_STRATEGY", "TLS")
     monkeypatch.setenv("SMTP_FROM_NAME", "Mealie")
     monkeypatch.setenv("SMTP_FROM_EMAIL", "mealie@mealie.io")
     monkeypatch.setenv("SMTP_USER", "mealie@mealie.io")
@@ -44,8 +43,11 @@ def email_service(monkeypatch) -> EmailService:
     return email_service
 
 
-def test_email_disabled():
+def test_email_disabled(monkeypatch):
     email_service = EmailService(TestEmailSender())
+
+    monkeypatch.setenv("SMTP_HOST", "")  # disable email
+
     get_app_settings.cache_clear()
     email_service.settings = get_app_settings()
     success = email_service.send_test_email(FAKE_ADDRESS)

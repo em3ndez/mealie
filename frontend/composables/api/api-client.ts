@@ -1,11 +1,16 @@
 import { AxiosResponse } from "axios";
 import { useContext } from "@nuxtjs/composition-api";
-import { NuxtAxiosInstance } from "@nuxtjs/axios";
-import { AdminAPI, Api } from "~/api";
-import { ApiRequestInstance, RequestResponse } from "~/types/api";
+import type { NuxtAxiosInstance } from "@nuxtjs/axios";
+import { ApiRequestInstance, RequestResponse } from "~/lib/api/types/non-generated";
+import { AdminAPI, PublicApi, UserApi } from "~/lib/api";
+import { PublicExploreApi } from "~/lib/api/client-public";
 
 const request = {
-  async safe<T, U>(funcCall: (url: string, data: U) => Promise<AxiosResponse<T>>, url: string, data: U): Promise<RequestResponse<T>> {
+  async safe<T, U>(
+    funcCall: (url: string, data: U) => Promise<AxiosResponse<T>>,
+    url: string,
+    data: U
+  ): Promise<RequestResponse<T>> {
     let error = null;
     const response = await funcCall(url, data).catch(function (e) {
       console.log(e);
@@ -52,15 +57,30 @@ function getRequests(axiosInstance: NuxtAxiosInstance): ApiRequestInstance {
   };
 }
 
+export const useRequests = function (): ApiRequestInstance {
+  const { $axios, i18n } = useContext();
+
+  $axios.setHeader("Accept-Language", i18n.locale);
+
+  return getRequests($axios);
+};
+
 export const useAdminApi = function (): AdminAPI {
-  const { $axios } = useContext();
-  const requests = getRequests($axios);
+  const requests = useRequests();
   return new AdminAPI(requests);
 };
 
-export const useUserApi = function (): Api {
-  const { $axios } = useContext();
-  const requests = getRequests($axios);
-
-  return new Api(requests);
+export const useUserApi = function (): UserApi {
+  const requests = useRequests();
+  return new UserApi(requests);
 };
+
+export const usePublicApi = function (): PublicApi {
+  const requests = useRequests();
+  return new PublicApi(requests);
+};
+
+export const usePublicExploreApi = function (groupSlug: string): PublicExploreApi {
+  const requests = useRequests();
+  return new PublicExploreApi(requests, groupSlug);
+}

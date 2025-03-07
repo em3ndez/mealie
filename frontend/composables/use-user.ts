@@ -1,9 +1,9 @@
 import { useAsync, ref } from "@nuxtjs/composition-api";
 import { useUserApi } from "~/composables/api";
-import { UserIn, UserOut } from "~/types/api-types/user";
+import { UserIn, UserOut } from "~/lib/api/types/user";
 
 /*
-TODO: Potentiall combine useAllUsers and useUser by delaying the get all users functinality
+TODO: Potentially combine useAllUsers and useUser by delaying the get all users functionality
 Unsure how this could work but still be clear and functional. Perhaps by passing arguments to the useUsers function
 to control whether the object is substantiated... but some of the others rely on it being substantiated...Will come back to this.
 */
@@ -17,7 +17,11 @@ export const useAllUsers = function () {
     const asyncKey = String(Date.now());
     const allUsers = useAsync(async () => {
       const { data } = await api.users.getAll();
-      return data;
+      if (data) {
+        return data.items;
+      } else {
+        return null;
+      }
     }, asyncKey);
 
     loading.value = false;
@@ -27,7 +31,13 @@ export const useAllUsers = function () {
   async function refreshAllUsers() {
     loading.value = true;
     const { data } = await api.users.getAll();
-    users.value = data;
+
+    if (data) {
+      users.value = data.items;
+    } else {
+      users.value = null;
+    }
+
     loading.value = false;
   }
 

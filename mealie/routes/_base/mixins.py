@@ -1,6 +1,8 @@
+from collections.abc import Callable
 from logging import Logger
-from typing import Callable, Generic, Type, TypeVar
+from typing import Generic, TypeVar
 
+import sqlalchemy.exc
 from fastapi import HTTPException, status
 from pydantic import UUID4, BaseModel
 
@@ -12,31 +14,30 @@ R = TypeVar("R", bound=BaseModel)
 U = TypeVar("U", bound=BaseModel)
 
 
-class CrudMixins(Generic[C, R, U]):
+class HttpRepo(Generic[C, R, U]):
     """
-    The CrudMixins[C, R, U] class is a mixin class that provides a common set of methods for CRUD operations.
-    This class is inteded to be used in a composition pattern where a class has a mixin property. For example:
+    The HttpRepo[C, R, U] class is a mixin class that provides a common set of methods for CRUD operations.
+    This class is intended to be used in a composition pattern where a class has a mixin property. For example:
 
     ```
     class MyClass:
-        def __init(self repo, logger):
-            self.mixins = CrudMixins(repo, logger)
+        def __init__(self, repo, logger):
+            self.mixins = HttpRepo(repo, logger)
     ```
 
     """
 
     repo: RepositoryGeneric
-    exception_msgs: Callable[[Type[Exception]], str] | None
+    exception_msgs: Callable[[type[Exception]], str] | None
     default_message: str = "An unexpected error occurred."
 
     def __init__(
         self,
         repo: RepositoryGeneric,
         logger: Logger,
-        exception_msgs: Callable[[Type[Exception]], str] = None,
-        default_message: str = None,
+        exception_msgs: Callable[[type[Exception]], str] | None = None,
+        default_message: str | None = None,
     ) -> None:
-
         self.repo = repo
         self.logger = logger
         self.exception_msgs = exception_msgs
@@ -57,10 +58,16 @@ class CrudMixins(Generic[C, R, U]):
         # Respond
         msg = self.get_exception_message(ex)
 
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            detail=ErrorResponse.respond(message=msg, exception=str(ex)),
-        )
+        if isinstance(ex, sqlalchemy.exc.NoResultFound):
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                detail=ErrorResponse.respond(message=msg, exception=str(ex)),
+            )
+        else:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=ErrorResponse.respond(message=msg, exception=str(ex)),
+            )
 
     def create_one(self, data: C) -> R | None:
         item: R | None = None
@@ -71,7 +78,7 @@ class CrudMixins(Generic[C, R, U]):
 
         return item
 
-    def get_one(self, item_id: int | str | UUID4, key: str = None) -> R:
+    def get_one(self, item_id: int | str | UUID4, key: str | None = None) -> R:
         item = self.repo.get_one(item_id, key)
 
         if not item:
@@ -83,7 +90,7 @@ class CrudMixins(Generic[C, R, U]):
         return item
 
     def update_one(self, data: U, item_id: int | str | UUID4) -> R:
-        item: R = self.repo.get_one(item_id)
+        item = self.repo.get_one(item_id)
 
         if not item:
             raise HTTPException(
@@ -98,13 +105,21 @@ class CrudMixins(Generic[C, R, U]):
 
         return item
 
-    def patch_one(self, data: U, item_id: int | str | UUID4) -> None:
-        self.repo.get_one(item_id)
+    def patch_one(self, data: U, item_id: int | str | UUID4) -> R:
+        item = self.repo.get_one(item_id)
+
+        if not item:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                detail=ErrorResponse.respond(message="Not found."),
+            )
 
         try:
-            self.repo.patch(item_id, data.dict(exclude_unset=True, exclude_defaults=True))
+            item = self.repo.patch(item_id, data.model_dump(exclude_unset=True, exclude_defaults=True))
         except Exception as ex:
             self.handle_exception(ex)
+
+        return item
 
     def delete_one(self, item_id: int | str | UUID4) -> R | None:
         item: R | None = None

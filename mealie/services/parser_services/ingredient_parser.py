@@ -1,5 +1,10 @@
-from abc import ABC, abstractmethod
 from fractions import Fraction
+
+from ingredient_parser import parse_ingredient
+from ingredient_parser.dataclasses import CompositeIngredientAmount, IngredientAmount
+from ingredient_parser.dataclasses import ParsedIngredient as IngredientParserParsedIngredient
+from pydantic import UUID4
+from sqlalchemy.orm import Session
 
 from mealie.core.root_logger import get_logger
 from mealie.schema.recipe import RecipeIngredient
@@ -11,23 +16,11 @@ from mealie.schema.recipe.recipe_ingredient import (
     RegisteredParser,
 )
 
-from . import brute, crfpp
+from . import brute, openai
+from ._base import ABCIngredientParser
+from .parser_utils import extract_quantity_from_string
 
 logger = get_logger(__name__)
-
-
-class ABCIngredientParser(ABC):
-    """
-    Abstract class for ingredient parsers.
-    """
-
-    @abstractmethod
-    def parse_one(self, ingredient_string: str) -> ParsedIngredient:
-        ...
-
-    @abstractmethod
-    def parse(self, ingredients: list[str]) -> list[ParsedIngredient]:
-        ...
 
 
 class BruteForceParser(ABCIngredientParser):
@@ -35,13 +28,10 @@ class BruteForceParser(ABCIngredientParser):
     Brute force ingredient parser.
     """
 
-    def __init__(self) -> None:
-        pass
+    async def parse_one(self, ingredient: str) -> ParsedIngredient:
+        bfi = brute.parse(ingredient, self)
 
-    def parse_one(self, ingredient: str) -> ParsedIngredient:
-        bfi = brute.parse(ingredient)
-
-        return ParsedIngredient(
+        parsed_ingredient = ParsedIngredient(
             input=ingredient,
             ingredient=RecipeIngredient(
                 unit=CreateIngredientUnit(name=bfi.unit),
@@ -52,66 +42,140 @@ class BruteForceParser(ABCIngredientParser):
             ),
         )
 
-    def parse(self, ingredients: list[str]) -> list[ParsedIngredient]:
-        return [self.parse_one(ingredient) for ingredient in ingredients]
+        return self.find_ingredient_match(parsed_ingredient)
+
+    async def parse(self, ingredients: list[str]) -> list[ParsedIngredient]:
+        return [await self.parse_one(ingredient) for ingredient in ingredients]
 
 
 class NLPParser(ABCIngredientParser):
     """
-    Class for CRFPP ingredient parsers.
+    Class for Ingredient Parser library
     """
 
-    def __init__(self) -> None:
-        pass
-
-    def _crf_to_ingredient(self, crf_model: crfpp.CRFIngredient) -> ParsedIngredient:
-        ingredient = None
-
-        try:
-            ingredient = RecipeIngredient(
-                title="",
-                note=crf_model.comment,
-                unit=CreateIngredientUnit(name=crf_model.unit),
-                food=CreateIngredientFood(name=crf_model.name),
-                disable_amount=False,
-                quantity=float(sum(Fraction(s) for s in crf_model.qty.split())),
-            )
-        except Exception as e:
-            logger.error(f"Failed to parse ingredient: {crf_model}: {e}")
-            # TODO: Capture some sort of state for the user to see that an exception occured
-            ingredient = RecipeIngredient(
-                title="",
-                note=crf_model.input,
+    @staticmethod
+    def _extract_amount(ingredient: IngredientParserParsedIngredient) -> IngredientAmount:
+        if not (ingredient_amounts := ingredient.amount):
+            return IngredientAmount(
+                quantity=Fraction(0), quantity_max=Fraction(0), unit="", text="", confidence=0, starting_index=-1
             )
 
-        return ParsedIngredient(
-            input=crf_model.input,
-            ingredient=ingredient,
+        ingredient_amount = ingredient_amounts[0]
+        if isinstance(ingredient_amount, CompositeIngredientAmount):
+            ingredient_amount = ingredient_amount.amounts[0]
+
+        return ingredient_amount
+
+    @staticmethod
+    def _extract_quantity(ingredient_amount: IngredientAmount) -> tuple[float, float]:
+        confidence = ingredient_amount.confidence
+
+        if isinstance(ingredient_amount.quantity, str):
+            qty = extract_quantity_from_string(ingredient_amount.quantity)[0]
+        else:
+            try:
+                qty = float(ingredient_amount.quantity)
+            except ValueError:
+                qty = 0
+                confidence = 0
+
+        return qty, confidence
+
+    @staticmethod
+    def _extract_unit(ingredient_amount: IngredientAmount) -> tuple[str, float]:
+        confidence = ingredient_amount.confidence
+        unit = str(ingredient_amount.unit) if ingredient_amount.unit else ""
+        return unit, confidence
+
+    @staticmethod
+    def _extract_food(ingredient: IngredientParserParsedIngredient) -> tuple[str, float]:
+        if not ingredient.name:
+            return "", 0
+
+        ingredient_name = ingredient.name[0]
+        confidence = ingredient_name.confidence
+        food = ingredient_name.text
+
+        return food, confidence
+
+    @staticmethod
+    def _extract_note(ingredient: IngredientParserParsedIngredient) -> tuple[str, float]:
+        confidences: list[float] = []
+        note_parts: list[str] = []
+        if ingredient.size:
+            note_parts.append(ingredient.size.text)
+            confidences.append(ingredient.size.confidence)
+        if ingredient.preparation:
+            note_parts.append(ingredient.preparation.text)
+            confidences.append(ingredient.preparation.confidence)
+        if ingredient.comment:
+            note_parts.append(ingredient.comment.text)
+            confidences.append(ingredient.comment.confidence)
+
+        # average confidence among all note parts
+        confidence = sum(confidences) / len(confidences) if confidences else 0
+        note = ", ".join(note_parts)
+        note = note.replace("(", "").replace(")", "")
+
+        return note, confidence
+
+    def _convert_ingredient(self, ingredient: IngredientParserParsedIngredient) -> ParsedIngredient:
+        ingredient_amount = self._extract_amount(ingredient)
+        qty, qty_conf = self._extract_quantity(ingredient_amount)
+        unit, unit_conf = self._extract_unit(ingredient_amount)
+        food, food_conf = self._extract_food(ingredient)
+        note, note_conf = self._extract_note(ingredient)
+
+        # average confidence for components which were parsed
+        confidences: list[float] = []
+        if qty:
+            confidences.append(qty_conf)
+        if unit:
+            confidences.append(unit_conf)
+        if food:
+            confidences.append(food_conf)
+        if note:
+            confidences.append(note_conf)
+
+        parsed_ingredient = ParsedIngredient(
+            input=ingredient.sentence,
             confidence=IngredientConfidence(
-                quantity=crf_model.confidence.qty,
-                food=crf_model.confidence.name,
-                **crf_model.confidence.dict(),
+                average=(sum(confidences) / len(confidences)) if confidences else 0,
+                quantity=qty_conf,
+                unit=unit_conf,
+                food=food_conf,
+                comment=note_conf,
+            ),
+            ingredient=RecipeIngredient(
+                title="",
+                quantity=qty,
+                unit=CreateIngredientUnit(name=unit) if unit else None,
+                food=CreateIngredientFood(name=food) if food else None,
+                disable_amount=False,
+                note=note,
             ),
         )
 
-    def parse(self, ingredients: list[str]) -> list[ParsedIngredient]:
-        crf_models = crfpp.convert_list_to_crf_model(ingredients)
-        return [self._crf_to_ingredient(crf_model) for crf_model in crf_models]
+        return self.find_ingredient_match(parsed_ingredient)
 
-    def parse_one(self, ingredient: str) -> ParsedIngredient:
-        items = self.parse_one([ingredient])
-        return items[0]
+    async def parse_one(self, ingredient_string: str) -> ParsedIngredient:
+        parsed_ingredient = parse_ingredient(ingredient_string)
+        return self._convert_ingredient(parsed_ingredient)
+
+    async def parse(self, ingredients: list[str]) -> list[ParsedIngredient]:
+        return [await self.parse_one(ingredient) for ingredient in ingredients]
 
 
-__registrar = {
+__registrar: dict[RegisteredParser, type[ABCIngredientParser]] = {
     RegisteredParser.nlp: NLPParser,
     RegisteredParser.brute: BruteForceParser,
+    RegisteredParser.openai: openai.OpenAIParser,
 }
 
 
-def get_parser(parser: RegisteredParser) -> ABCIngredientParser:
+def get_parser(parser: RegisteredParser, group_id: UUID4, session: Session) -> ABCIngredientParser:
     """
     get_parser returns an ingrdeint parser based on the string enum value
     passed in.
     """
-    return __registrar.get(parser, NLPParser)()
+    return __registrar.get(parser, NLPParser)(group_id, session)

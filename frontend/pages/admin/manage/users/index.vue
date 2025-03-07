@@ -1,18 +1,34 @@
 <template>
   <v-container fluid>
-    <BaseDialog v-model="deleteDialog" :title="$t('general.confirm')" color="error" @confirm="deleteUser(deleteTarget)">
+    <UserInviteDialog v-model="inviteDialog" />
+    <BaseDialog
+      v-model="deleteDialog"
+      :title="$tc('general.confirm')"
+      color="error"
+      @confirm="deleteUser(deleteTargetId)"
+    >
       <template #activator> </template>
+
       <v-card-text>
+        <v-alert v-if="isUserOwnAccount" type="warning" text outlined>
+          {{ $t("general.confirm-delete-own-admin-account") }}
+        </v-alert>
         {{ $t("general.confirm-delete-generic") }}
       </v-card-text>
     </BaseDialog>
 
-    <BaseCardSectionTitle title="User Management"> </BaseCardSectionTitle>
+    <BaseCardSectionTitle :title="$tc('user.user-management')"> </BaseCardSectionTitle>
     <section>
-      <v-toolbar color="background" flat class="justify-between">
-        <BaseButton to="/admin/manage/users/create">
+      <v-toolbar color="transparent" flat class="justify-between">
+        <BaseButton to="/admin/manage/users/create" class="mr-2">
           {{ $t("general.create") }}
         </BaseButton>
+        <BaseButton class="mr-2" color="info" :icon="$globals.icons.link" @click="inviteDialog = true">
+          {{ $t("group.invite") }}
+        </BaseButton>
+
+        <BaseOverflowButton mode="event" :items="ACTIONS_OPTIONS" @unlock-all-users="unlockAllUsers">
+        </BaseOverflowButton>
       </v-toolbar>
       <v-data-table
         :headers="headers"
@@ -37,7 +53,7 @@
             color="error"
             @click.stop="
               deleteDialog = true;
-              deleteTarget = item.id;
+              deleteTargetId = item.id;
             "
           >
             <v-icon>
@@ -52,29 +68,61 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, reactive, ref, toRefs, useContext, useRouter } from "@nuxtjs/composition-api";
-import { useUserApi } from "~/composables/api";
+import { defineComponent, reactive, ref, toRefs, useContext, useRouter, computed } from "@nuxtjs/composition-api";
+import { useAdminApi } from "~/composables/api";
+import { alert } from "~/composables/use-toast";
 import { useUser, useAllUsers } from "~/composables/use-user";
-import { UserOut } from "~/types/api-types/user";
+import { UserOut } from "~/lib/api/types/user";
+import UserInviteDialog from "~/components/Domain/User/UserInviteDialog.vue";
 
 export default defineComponent({
+  components: {
+    UserInviteDialog,
+  },
   layout: "admin",
   setup() {
-    const api = useUserApi();
+    const api = useAdminApi();
     const refUserDialog = ref();
+    const inviteDialog = ref();
+    const { $auth } = useContext();
 
-    const { i18n } = useContext();
+    const user = computed(() => $auth.user);
+
+    const { $globals, i18n } = useContext();
 
     const router = useRouter();
 
+    const isUserOwnAccount = computed(() => {
+      return state.deleteTargetId === user.value?.id;
+    });
+
+    const ACTIONS_OPTIONS = [
+      {
+        text: i18n.t("user.reset-locked-users"),
+        icon: $globals.icons.lock,
+        event: "unlock-all-users",
+      },
+    ];
+
     const state = reactive({
       deleteDialog: false,
-      deleteTarget: 0,
+      deleteTargetId: "",
       search: "",
+      groups: [],
+      households: [],
+      sendTo: "",
     });
 
     const { users, refreshAllUsers } = useAllUsers();
-    const { loading, deleteUser } = useUser(refreshAllUsers);
+    const { loading, deleteUser: deleteUserMixin } = useUser(refreshAllUsers);
+
+    function deleteUser(id: string) {
+      deleteUserMixin(id);
+
+      if (isUserOwnAccount.value) {
+        $auth.logout();
+      }
+    }
 
     function handleRowClick(item: UserOut) {
       router.push(`/admin/manage/users/${item.id}`);
@@ -93,19 +141,36 @@ export default defineComponent({
       { text: i18n.t("user.full-name"), value: "fullName" },
       { text: i18n.t("user.email"), value: "email" },
       { text: i18n.t("group.group"), value: "group" },
+      { text: i18n.t("household.household"), value: "household" },
+      { text: i18n.t("user.auth-method"), value: "authMethod" },
       { text: i18n.t("user.admin"), value: "admin" },
       { text: i18n.t("general.delete"), value: "actions", sortable: false, align: "center" },
     ];
 
+    async function unlockAllUsers(): Promise<void> {
+      const { data } = await api.users.unlockAllUsers(true);
+
+      if (data) {
+        const unlocked = data.unlocked ?? 0;
+
+        alert.success(`${unlocked} user(s) unlocked`);
+        refreshAllUsers();
+      }
+    }
+
     return {
+      isUserOwnAccount,
+      unlockAllUsers,
       ...toRefs(state),
-      api,
       headers,
       deleteUser,
       loading,
       refUserDialog,
+      inviteDialog,
       users,
+      user,
       handleRowClick,
+      ACTIONS_OPTIONS,
     };
   },
   head() {

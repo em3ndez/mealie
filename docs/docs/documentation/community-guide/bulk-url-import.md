@@ -8,7 +8,7 @@ Recipes can be imported in bulk from a file containing a list of URLs. This can 
 ```bash
 #!/bin/bash
 
-function authentification () {
+function authentication () {
   auth=$(curl -X 'POST' \
     "$3/api/auth/token" \
     -H 'accept: application/json' \
@@ -23,7 +23,7 @@ function import_from_file () {
   do
     echo $line
     curl -X 'POST' \
-      "$3/api/recipes/create-url" \
+      "$3/api/recipes/create/url" \
       -H "Authorization: Bearer $2" \
       -H 'accept: application/json' \
       -H 'Content-Type: application/json' \
@@ -33,22 +33,25 @@ function import_from_file () {
 }
 
 input="list"
-mail="changeme@email.com"
+mail="changeme@example.com"
 password="MyPassword"
 mealie_url=http://localhost:9000
 
 
-token=$(authentification $mail $password $mealie_url)
+token=$(authentication $mail $password $mealie_url)
 import_from_file $input $token $mealie_url
 
 ```
+
+#### Go
+See <a href="https://github.com/Jleagle/mealie-importer" target="_blank">Jleagle/mealie-importer</a>.
 
 #### Python
 ```python
 import requests
 import re
 
-def authentification(mail, password, mealie_url):
+def authentication(mail, password, mealie_url):
   headers = {
     'accept': 'application/json',
     'Content-Type': 'application/x-www-form-urlencoded',
@@ -78,16 +81,15 @@ def import_from_file(input_file, token, mealie_url):
       data = {
         'url': line
       }
-      response = requests.post(mealie_url + "/api/recipes/create-url", headers=headers, json=data)
+      response = requests.post(mealie_url + "/api/recipes/create/url", headers=headers, json=data)
       print(response.text)
 
 input_file="list"
-mail="changeme@email.com"
+mail="changeme@example.com"
 password="MyPassword"
 mealie_url="http://localhost:9000"
 
 
-token = authentification(mail, password, mealie_url)
+token = authentication(mail, password, mealie_url)
 import_from_file(input_file, token, mealie_url)
 ```
-

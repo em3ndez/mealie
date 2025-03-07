@@ -1,8 +1,8 @@
 import zipfile
 from abc import abstractmethod, abstractproperty
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterator, Optional
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -27,7 +27,7 @@ class ExportedItem:
 
 
 class ABCExporter(BaseService):
-    write_dir_to_zip: Callable[[Path, str, Optional[list[str]]], None]
+    write_dir_to_zip: Callable[[Path, str, set[str] | None], None] | None = None
 
     def __init__(self, db: AllRepositories, group_id: UUID) -> None:
         self.logger = get_logger()
@@ -37,18 +37,15 @@ class ABCExporter(BaseService):
         super().__init__()
 
     @abstractproperty
-    def destination_dir(self) -> str:
-        ...
+    def destination_dir(self) -> str: ...
 
     @abstractmethod
-    def items(self) -> Iterator[ExportedItem]:
-        ...
+    def items(self) -> Iterator[ExportedItem]: ...
 
     def _post_export_hook(self, _: BaseModel) -> None:
         pass
 
-    @abstractmethod
-    def export(self, zip: zipfile.ZipFile) -> list[ReportEntryCreate]:
+    def export(self, zip: zipfile.ZipFile) -> list[ReportEntryCreate]:  # type: ignore
         """
         Export takes in a zip file and exports the recipes to it. Note that the zip
         file open/close is NOT handled by this method. You must handle it yourself.
@@ -57,7 +54,7 @@ class ABCExporter(BaseService):
             zip (zipfile.ZipFile): Zip file destination
 
         Returns:
-            list[ReportEntryCreate]: [description] ???!?!
+            list[ReportEntryCreate]:
         """
         self.write_dir_to_zip = self.write_dir_to_zip_func(zip)
 
@@ -66,7 +63,7 @@ class ABCExporter(BaseService):
                 self.logger.error("Failed to export item. no item found")
                 continue
 
-            zip.writestr(f"{self.destination_dir}/{item.name}/{item.name}.json", item.model.json())
+            zip.writestr(f"{self.destination_dir}/{item.name}/{item.name}.json", item.model.model_dump_json())
 
             self._post_export_hook(item.model)
 
@@ -79,7 +76,7 @@ class ABCExporter(BaseService):
             zip (zipfile.ZipFile):
         """
 
-        def func(source_dir: Path, dest_dir: str, ignore_ext: set[str] = None) -> None:
+        def func(source_dir: Path, dest_dir: str, ignore_ext: set[str] | None = None) -> None:
             ignore_ext = ignore_ext or set()
 
             for source_file in source_dir.iterdir():
